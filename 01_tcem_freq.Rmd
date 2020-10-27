@@ -16,7 +16,6 @@ knitr::opts_chunk$set(
 )
 setwd("d:/CloudStation/mygit/fitness-modell-bk/")
 ext_folder1 = "d:/CloudStation/fitness-model-ext/"
-ext_folder2 = "d:/CloudStation/tcga/"
 library(dplyr)
 library(magrittr)
 library(fastmatch)
@@ -43,7 +42,6 @@ bplot = function(x, plog = F) {
   }
   return(fig)
 }
-
 fillnafun = function(v,l) {
   outvec = c(v,rep(NA,l-length(v)))
   names(outvec) = NULL
@@ -369,12 +367,15 @@ save(tumors_meddiffs, file = paste0(ext_folder1,"01out/tumors_meddiffs_all_napi"
 ##Passenger mutations - not aggragated per individual
 
 ```{r}
+ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "objects/driver_mutations"))
+load(paste0(ext_folder1, "01out/diff_names"))
 
 tumors_meddiffs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
+  tempids = tempids[tempids %in% ids]
   temp_med_diffs = lapply(tempids, function(y) {
     load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", y))
     diffs = lapply(diffs, function(z) {
@@ -383,7 +384,11 @@ tumors_meddiffs = lapply(tumors, function(x) {
       z = z[names(z) %nin% driver]
     })
     m = max(lengths(diffs), na.rm = T)
-    sapply(diffs, function(p) fillnafun(p, m)) #create matrix
+    if(m==0) {
+      matrix(NA,nrow = 0, ncol = 8, dimnames = list(NULL,diff_names))
+    } else {
+      sapply(diffs, function(p) fillnafun(p, m)) #create matrix
+    }
   })
   names(temp_med_diffs) = tempids
   temp_med_diffs = do.call(rbind,temp_med_diffs)
@@ -415,16 +420,16 @@ res1 = cbind(res1, study= study_abbrev[match(res1$tumor, study_abbrev$abb),"stud
 
 for(i in diff_names) {
   bplot(x = i, plog = F)
-  ggsave(filename = paste0(ext_folder1,"01out/plots/all_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
+  ggsave(filename = paste0(ext_folder1,"01out/plots/pass_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
 }
 
-bplot(x = "aff_str_diff", plog = F)
-bplot(x = "rp_str_diff", plog = F)
-bplot(x = "or_str_diff", plog = F)
-bplot(x = "and_str_diff", plog = F)
-bplot(x = "aff_weak_diff", plog = F)
-bplot(x = "rp_weak_diff", plog = F)
-bplot(x = "or_weak_diff", plog = F)
-bplot(x = "and_weak_diff", plog = F)
+# bplot(x = "aff_str_diff", plog = F)
+# bplot(x = "rp_str_diff", plog = F)
+# bplot(x = "or_str_diff", plog = F)
+# bplot(x = "and_str_diff", plog = F)
+# bplot(x = "aff_weak_diff", plog = F)
+# bplot(x = "rp_weak_diff", plog = F)
+# bplot(x = "or_weak_diff", plog = F)
+# bplot(x = "and_weak_diff", plog = F)
 
 ```
