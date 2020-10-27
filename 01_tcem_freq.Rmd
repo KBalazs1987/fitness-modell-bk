@@ -1,0 +1,430 @@
+---
+title: "TCGA-TCEM"
+author: "Balazs Koncz"
+date: '2020 10 20 '
+output: html_document
+---
+
+#Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	fig.path = "Figs/"
+)
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+ext_folder2 = "d:/CloudStation/tcga/"
+library(dplyr)
+library(magrittr)
+library(fastmatch)
+library(ggplot2)
+library(forcats)
+library(stringi)
+library(Rfast)
+'%nin%' = Negate('%in%')
+bplot = function(x, plog = F) {
+  tempdf = res1 %>% select(study, x)
+  colnames(tempdf) = c("study", "diffvar")
+  tempdf %<>% mutate(study = fct_reorder(.f = study, .x = diffvar, .fun = function(z) median(z, na.rm = T)))
+  ylimits = c(quantile(tempdf$diffvar,0.05,na.rm=T),quantile(tempdf$diffvar,0.95,na.rm=T))
+  if(plog == T) {
+    fig = ggplot(tempdf, aes(study, diffvar)) + 
+      geom_boxplot(outlier.shape = NA) + 
+      scale_y_continuous(trans = "pseudo_log", limits = ylimits) +
+      theme(axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90))
+  } else {
+    fig = ggplot(tempdf, aes(study, diffvar)) + 
+      geom_boxplot(outlier.shape = NA) + 
+      scale_y_continuous(limits = ylimits) +
+      theme(axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90))
+  }
+  return(fig)
+}
+
+fillnafun = function(v,l) {
+  outvec = c(v,rep(NA,l-length(v)))
+  names(outvec) = NULL
+  outvec
+}
+```
+
+#Driver or passenger mutations
+
+```{r}
+ids = list.files(paste0(ext_folder1, "recogn_matrices_neo")) #8943
+study_abbrev = read.delim(paste0(ext_folder1, "study_abbrev.txt"), stringsAsFactors = F)
+study_abbrev$abb = tolower(study_abbrev$abb)
+save(study_abbrev, file = paste0(ext_folder1,"objects/study_abbrev"))
+
+mutfreq = lapply(ids, function(x) {
+  #NEO
+  load(paste0(ext_folder1, "neoeps/", x))
+  names(neoeps_list)
+})
+mutfreq = do.call(c,mutfreq)
+temp = table(mutfreq)
+mutfreq = as.numeric(temp)
+names(mutfreq) = names(temp)
+rm(temp)
+driver = names(mutfreq)[mutfreq>1]
+#passenger = names(mutfreq)[mutfreq==1]
+save(driver, file = paste0(ext_folder1, "objects/driver_mutations"))
+rm(mutfreq)
+```
+
+
+```{r}
+# load(paste0(ext_folder1, "recogn_matrices_orig/TCGA-02-0003-01")) #recogn_matrices
+# load(paste0(ext_folder1, "recogn_matrices_neo/TCGA-02-0003-01")) #recogn_matrices
+# load(paste0(ext_folder1, "origeps/TCGA-02-0003-01")) #origeps_list
+# load(paste0(ext_folder1, "neoeps/TCGA-02-0003-01")) #neoeps_list
+# load(paste0(ext_folder1, "ttypes/TCGA-02-0003-01")) #ttype
+
+ids = list.files(paste0(ext_folder1, "recogn_matrices_neo")) #8943
+nonamer_selection = function(p,n) {
+  if(n == 0 | p<4) {
+    c(F,F,F,F,F,F,F,F,F)
+  } else if(n == 2) {
+    c(F,T,F,F,F,F,F,F,F)
+  } else if(n == 3) {
+    c(F,T,T,F,F,F,F,F,F)
+  } else if(n == 4 & p == 4) {
+    c(T,F,F,F,F,F,F,F,F)
+  } else if(n == 4 & p != 4) {
+    c(F,T,T,T,F,F,F,F,F)
+  } else if(n == 4 & p == 5) {
+    c(T,T,F,F,F,F,F,F,F)
+  } else if(n == 5 & p != 5) {
+    c(F,T,T,T,T,F,F,F,F)
+  } else if(n == 6 & p == 6) {
+    c(T,T,T,F,F,F,F,F,F)
+  } else if(n == 6 & p != 6) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else if(n == 7 & p == 7) {
+    c(T,T,T,T,F,F,F,F,F)
+  } else if(n == 7 & p != 7) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else if(n == 8 & p == 8) {
+    c(T,T,T,T,T,F,F,F,F)
+  } else if(n == 8 & p != 8) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else {
+    c(F,T,T,T,T,T,F,F,F)
+  }
+}
+
+lapply(ids, function(x) {
+  #NEO
+  load(paste0(ext_folder1, "neoeps/", x))
+  load(paste0(ext_folder1, "recogn_matrices_neo/", x))
+  neoeps_list = lapply(neoeps_list, function(y) y[nchar(y) == 9])
+  pos = as.numeric(gsub("[[:upper:]]","",sapply(strsplit(names(neoeps_list),"\\."), function(z) z[3])))
+  n9mers = lengths(neoeps_list)
+  tmn = lapply(1:length(neoeps_list), function(u) neoeps_list[[u]][nonamer_selection(pos[u],n9mers[u])]) #mutation in TCEM position
+  names(tmn) = names(neoeps_list)
+  tmn_unlist = unlist(tmn)
+  names(tmn_unlist) = sapply(names(tmn_unlist), function(v) substr(v,1,(nchar(v)-1)))
+  tmn_unlist = tmn_unlist[!is.na(tmn_unlist)]
+  indices = fmatch(tmn_unlist,colnames(recogn_matrices$aff))
+  #STRONG NEO
+  aff_str_tmn_indices = colMins(recogn_matrices$aff[,indices], value = T)<50
+  aff_str_tmn = tmn_unlist[aff_str_tmn_indices] #ezeket kell venni az origbol is!!
+  rp_str_tmn_indices = colMins(recogn_matrices$rp[,tmn_unlist], value = T)<0.5
+  rp_str_tmn = tmn_unlist[rp_str_tmn_indices] #ezeket kell venni az origbol is!!
+  #WEAK NEO
+  aff_weak_tmn_indices = colMins(recogn_matrices$aff[,tmn_unlist], value = T)<500
+  aff_weak_tmn = tmn_unlist[aff_weak_tmn_indices] #ezeket kell venni az origbol is!!
+  rp_weak_tmn_indices = colMins(recogn_matrices$rp[,tmn_unlist], value = T)<2
+  rp_weak_tmn = tmn_unlist[rp_weak_tmn_indices] #ezeket kell venni az origbol is!!
+  #ORIG
+  load(paste0(ext_folder1, "origeps/", x))
+  load(paste0(ext_folder1, "recogn_matrices_orig/", x))
+  origeps_list = lapply(origeps_list, function(y) y[nchar(y) == 9])
+  tmo = lapply(1:length(origeps_list), function(u) origeps_list[[u]][nonamer_selection(pos[u],n9mers[u])])
+  names(tmo) = names(origeps_list)
+  tmo_unlist = unlist(tmo)
+  names(tmo_unlist) = sapply(names(tmo_unlist), function(v) substr(v,1,(nchar(v)-1)))
+  tmo_unlist = tmo_unlist[!is.na(tmo_unlist)]
+  #STRONG ORIG
+  aff_str_tmo = tmo_unlist[aff_str_tmn_indices] #ezeket vettuk a neobol!!
+  rp_str_tmo = tmo_unlist[rp_str_tmn_indices] #ezeket vettuk a neobol!!
+  #WEAK ORIG
+  aff_weak_tmo = tmo_unlist[aff_weak_tmn_indices]
+  rp_weak_tmo = tmo_unlist[rp_weak_tmn_indices]
+
+  or_str_tmn = unique(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo)))[,1]
+  or_str_tmo = unique(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo)))[,2]
+  or_weak_tmn = unique(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo)))[,1]
+  or_weak_tmo = unique(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo)))[,2]
+  
+  temp_str = cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo))[duplicated(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo))),,drop=F]
+  and_str_tmn = temp_str[,1]
+  and_str_tmo = temp_str[,2]
+  temp_weak = cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo))[duplicated(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo))),,drop=F]
+  and_weak_tmn = temp_weak[,1]
+  and_weak_tmo = temp_weak[,2]
+  
+  #JOIN INTO A LIST
+  tmn_list = list(tmn = tmn,tmn_unlist = tmn_unlist,aff_str_tmn = aff_str_tmn,rp_str_tmn = rp_str_tmn,or_str_tmn = or_str_tmn,and_str_tmn = and_str_tmn,aff_weak_tmn = aff_weak_tmn,rp_weak_tmn = rp_weak_tmn,or_weak_tmn = or_weak_tmn,and_weak_tmn = and_weak_tmn, tmo = tmo,tmo_unlist = tmo_unlist,aff_str_tmo = aff_str_tmo,rp_str_tmo = rp_str_tmo,or_str_tmo = or_str_tmo,and_str_tmo = and_str_tmo,aff_weak_tmo = aff_weak_tmo,rp_weak_tmo = rp_weak_tmo,or_weak_tmo = or_weak_tmo,and_weak_tmo = and_weak_tmo)
+  save(tmn_list, file = paste0(ext_folder1,"tcem_mutated_nonamers/", x))
+})
+
+# mutonlydf[mutonlydf$nnonamers == 1|mutonlydf$nnonamers == 5|mutonlydf$position < 4,5:13] = c(F,F,F,F,F,F,F,F,F) #Excluded: nnonamers == 1 - aa data is unknown; position = 1,2 or 3 - mutation is not in TCEM (at the begining of the protein); nonamers = 5 - mutation is not in TCEM (at the end of the protein)
+# mutonlydf[mutonlydf$nnonamers == 10,5:13] = c(F,T,F,F,F,F,F,F,F) #last-1 position - 2 nonamer: 2. kell
+# mutonlydf[mutonlydf$nnonamers == 15,5:13] = c(F,T,T,F,F,F,F,F,F) #last-2 position - 3 nonamer: 2. es 3. kell
+# mutonlydf[mutonlydf$nnonamers == 20 & mutonlydf$position == 4,5:13] = c(T,F,F,F,F,F,F,F,F) #4 nonamer: 1. kell (4. pozicioban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 20 & mutonlydf$position != 4,5:13] = c(F,T,T,T,F,F,F,F,F) #last-3 position: 4 nonamer: 2-4. kell (8,7,6 poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 25 & mutonlydf$position == 5,5:13] = c(T,T,F,F,F,F,F,F,F) #5 nonamer: 1-2. kell (5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 25 & mutonlydf$position != 5,5:13] = c(F,T,T,T,T,F,F,F,F) #last-4 position: 5 nonamer: 2-5. kell (8,7,6,5. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 30 & mutonlydf$position == 6,5:13] = c(T,T,T,F,F,F,F,F,F) #6 nonamer: 1-3. kell (6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 30 & mutonlydf$position != 6,5:13] = c(F,T,T,T,T,T,F,F,F) #last-5 position: 6 nonamer: 2-6. kell (8,7,6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 35 & mutonlydf$position == 7,5:13] = c(T,T,T,T,F,F,F,F,F) #7 nonamer: 1-4. kell (7,6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 35 & mutonlydf$position != 7,5:13] = c(F,T,T,T,T,T,F,F,F) #last-6 position: 7 nonamer: 2-6. kell (8,7,6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 40 & mutonlydf$position == 8,5:13] = c(T,T,T,T,T,F,F,F,F) #8 nonamer: 1-5. kell (8,7,6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers == 40 & mutonlydf$position != 8,5:13] = c(F,T,T,T,T,T,F,F,F) #last-7 position: 8 nonamer: 2-6. kell (8,7,6,5,4. poziciokban van a mut)
+# mutonlydf[mutonlydf$nnonamers > 40 & mutonlydf$position > 8,5:13] = matrix(c(F,T,T,T,T,T,F,F,F), byrow = T) #others
+
+load("D:/CloudStation/fitness-model-ext/tcem_mutated_nonamers/TCGA-04-1346-01")
+```
+
+#TCEM frequency differencies - original-neo
+
+```{r}
+ids = list.files(paste0(ext_folder1, "recogn_matrices_neo")) #8943
+load("../common_objects/pentamerfreq_tcem")
+
+# for(i in 1:10) {
+#   print(i)
+#   load(paste0(ext_folder1, "tcem_mutated_nonamers/", ids[i]))
+#   aff_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmn,4,8),names(pentamerfreq_tcem))]
+#   rp_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmn,4,8),names(pentamerfreq_tcem))]
+#   or_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmn,4,8),names(pentamerfreq_tcem))]
+#   and_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmn,4,8),names(pentamerfreq_tcem))]
+#   aff_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmn,4,8),names(pentamerfreq_tcem))]
+#   rp_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmn,4,8),names(pentamerfreq_tcem))]
+#   or_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmn,4,8),names(pentamerfreq_tcem))]
+#   and_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmn,4,8),names(pentamerfreq_tcem))]
+#   diffs = list(aff_str_diff = aff_str_diff, rp_str_diff = rp_str_diff, or_str_diff = or_str_diff, and_str_diff = and_str_diff, aff_weak_diff = aff_weak_diff, rp_weak_diff = rp_weak_diff, or_weak_diff = or_weak_diff, and_weak_diff = and_weak_diff)
+#   save(diffs, file = paste0(ext_folder1,"tcem_mutated_nonamers_diffs/", ids[i]))
+# }
+
+lapply(ids, function(x) {
+  load(paste0(ext_folder1, "tcem_mutated_nonamers/", x))
+  aff_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_str_diff)>0) names(aff_str_diff) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmo,4,8),".",substr(tmn_list$aff_str_tmn,4,8))
+  rp_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_str_diff)>0) names(rp_str_diff) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmo,4,8),".",substr(tmn_list$rp_str_tmn,4,8))
+  or_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_str_diff)>0) names(or_str_diff) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmo,4,8),".",substr(tmn_list$or_str_tmn,4,8))
+  and_str_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_str_diff) >0) names(and_str_diff) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmo,4,8),".",substr(tmn_list$and_str_tmn,4,8))
+  aff_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_weak_diff)>0) names(aff_weak_diff) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmo,4,8),".",substr(tmn_list$aff_weak_tmn,4,8))
+  rp_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_weak_diff)>0) names(rp_weak_diff) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmo,4,8),".",substr(tmn_list$rp_weak_tmn,4,8))
+  or_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_weak_diff)>0) names(or_weak_diff) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmo,4,8),".",substr(tmn_list$or_weak_tmn,4,8))
+  and_weak_diff = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmo,4,8),names(pentamerfreq_tcem))]-pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_weak_diff)>0) names(and_weak_diff) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmo,4,8),".",substr(tmn_list$and_weak_tmn,4,8))
+  diffs = list(aff_str_diff = aff_str_diff, rp_str_diff = rp_str_diff, or_str_diff = or_str_diff, and_str_diff = and_str_diff, aff_weak_diff = aff_weak_diff, rp_weak_diff = rp_weak_diff, or_weak_diff = or_weak_diff, and_weak_diff = and_weak_diff)
+  save(diffs, file = paste0(ext_folder1,"tcem_mutated_nonamers_diffs/", x))
+})
+
+load("D:/CloudStation/fitness-model-ext/tcem_mutated_nonamers_diffs/TCGA-04-1346-01")
+
+#Drop patients without data
+patdropped = ids[sapply(ids, function(x) {
+  load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", x))
+  all(lengths(diffs)==0)
+})]
+
+for(i in 1:length(patdropped)) {
+  unlink(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", patdropped[i]))
+}
+```
+
+#Compare TCEM frequency differencies - patients
+
+```{r}
+ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
+med_diffs = lapply(ids, function(x) {
+  load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", x))
+  md = c(aff_str_diff = median(diffs$aff_str_diff), rp_str_diff = median(diffs$rp_str_diff), or_str_diff = median(diffs$or_str_diff), and_str_diff = median(diffs$and_str_diff), aff_weak_diff = median(diffs$aff_weak_diff), rp_weak_diff = median(diffs$rp_weak_diff), or_weak_diff = median(diffs$or_weak_diff), and_weak_diff = median(diffs$and_weak_diff))
+})
+names(med_diffs) = ids
+
+med_diffs = do.call(rbind,med_diffs)
+table(med_diffs[,1])
+table(med_diffs[,1]>0)
+
+
+
+```
+
+#Tumors
+
+##Function
+
+```{r}
+
+
+# load("D:/CloudStation/fitness-model-ext/tcem_mutated_nonamers_diffs/TCGA-04-1346-01")
+# diff_names = names(diffs)
+# save(diff_names, file = paste0(ext_folder1,"01out/diff_names"))
+# rm(diffs)
+# tt = sapply(ids, function(x) {
+#   load(paste0(ext_folder1, "ttypes/", x))
+#   ttype
+# })
+# save(tt, file = paste0(ext_folder1,"objects/tumortypes"))
+# tumors = sort(unique(tt))
+# save(tumors, file = paste0(ext_folder1,"objects/tumors"))
+
+# ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
+```
+
+##All mutations - median per individual
+
+```{r}
+ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1, "objects/tumortypes"))
+load(paste0(ext_folder1, "01out/diff_names"))
+
+tumors_meddiffs = lapply(tumors, function(x) {
+  tempids = names(tt)[tt == x]
+  tempids = tempids[tempids %in% ids]
+  temp_med_diffs = lapply(tempids, function(y) {
+    load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", y))
+    md = c(aff_str_diff = median(diffs$aff_str_diff, na.rm = T), rp_str_diff = median(diffs$rp_str_diff, na.rm = T), or_str_diff = median(diffs$or_str_diff, na.rm = T), and_str_diff = median(diffs$and_str_diff, na.rm = T), aff_weak_diff = median(diffs$aff_weak_diff, na.rm = T), rp_weak_diff = median(diffs$rp_weak_diff, na.rm = T), or_weak_diff = median(diffs$or_weak_diff, na.rm = T), and_weak_diff = median(diffs$and_weak_diff, na.rm = T))
+    names(md) = diff_names
+    md
+  })
+  names(temp_med_diffs) = tempids
+  temp_med_diffs = do.call(rbind,temp_med_diffs)
+})
+names(tumors_meddiffs) = tumors
+save(tumors_meddiffs, file = paste0(ext_folder1,"01out/tumors_meddiffs_all_mpi"))
+
+tumors_meddiffs$acc %>% View()
+```
+
+##Passenger mutations - median per individual
+
+```{r}
+ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
+load(paste0(ext_folder1, "objects/driver_mutations"))
+load(paste0(ext_folder1, "objects/tumortypes"))
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1, "01out/diff_names"))
+
+tumors_meddiffs = lapply(tumors, function(x) {
+  tempids = names(tt)[tt == x]
+  tempids = tempids[tempids %in% ids]
+  temp_med_diffs = lapply(tempids, function(y) {
+    load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", y))
+    diffs = lapply(diffs, function(z) {
+      tempmuts = sapply(names(z), function(w) paste0(strsplit(w,"\\.")[[1]][1:3], collapse = "."))
+      names(z) = tempmuts
+      z = z[names(z) %nin% driver]
+    })
+    md = c(aff_str_diff = median(diffs$aff_str_diff, na.rm = T), rp_str_diff = median(diffs$rp_str_diff, na.rm = T), or_str_diff = median(diffs$or_str_diff, na.rm = T), and_str_diff = median(diffs$and_str_diff, na.rm = T), aff_weak_diff = median(diffs$aff_weak_diff, na.rm = T), rp_weak_diff = median(diffs$rp_weak_diff, na.rm = T), or_weak_diff = median(diffs$or_weak_diff, na.rm = T), and_weak_diff = median(diffs$and_weak_diff, na.rm = T))
+    names(md) = diff_names
+    md
+  })
+  names(temp_med_diffs) = tempids
+  temp_med_diffs = do.call(rbind,temp_med_diffs)
+})
+names(tumors_meddiffs) = tumors
+save(tumors_meddiffs, file = paste0(ext_folder1,"01out/tumors_meddiffs_pass_mpi"))
+
+tumors_meddiffs$acc %>% View()
+```
+
+##All mutations - not aggragated per individual
+
+```{r}
+ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_diffs")) #8887
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1, "objects/tumortypes"))
+
+tumors_meddiffs = lapply(tumors, function(x) {
+  tempids = names(tt)[tt == x]
+  tempids = tempids[tempids %in% ids]
+  temp_med_diffs = lapply(tempids, function(y) {
+    load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", y))
+    m = max(lengths(diffs), na.rm = T)
+    sapply(diffs, function(p) fillnafun(p, m)) #create matrix
+  })
+  names(temp_med_diffs) = tempids
+  temp_med_diffs = do.call(rbind,temp_med_diffs)
+})
+names(tumors_meddiffs) = tumors
+save(tumors_meddiffs, file = paste0(ext_folder1,"01out/tumors_meddiffs_all_napi"))
+```
+
+##Passenger mutations - not aggragated per individual
+
+```{r}
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1, "objects/tumortypes"))
+load(paste0(ext_folder1, "objects/driver_mutations"))
+
+tumors_meddiffs = lapply(tumors, function(x) {
+  tempids = names(tt)[tt == x]
+  temp_med_diffs = lapply(tempids, function(y) {
+    load(paste0(ext_folder1, "tcem_mutated_nonamers_diffs/", y))
+    diffs = lapply(diffs, function(z) {
+      tempmuts = sapply(names(z), function(w) paste0(strsplit(w,"\\.")[[1]][1:3], collapse = "."))
+      names(z) = tempmuts
+      z = z[names(z) %nin% driver]
+    })
+    m = max(lengths(diffs), na.rm = T)
+    sapply(diffs, function(p) fillnafun(p, m)) #create matrix
+  })
+  names(temp_med_diffs) = tempids
+  temp_med_diffs = do.call(rbind,temp_med_diffs)
+})
+names(tumors_meddiffs) = tumors
+
+save(tumors_meddiffs, file = paste0(ext_folder1,"01out/tumors_meddiffs_pass_napi"))
+```
+
+##Plots
+
+```{r}
+load(paste0(ext_folder1,"01out/tumors_meddiffs_all_mpi")) #OR
+load(paste0(ext_folder1,"01out/tumors_meddiffs_pass_mpi")) #OR
+load(paste0(ext_folder1,"01out/tumors_meddiffs_all_napi")) #OR
+load(paste0(ext_folder1,"01out/tumors_meddiffs_pass_napi"))
+
+load(paste0(ext_folder1, "01out/diff_names"))
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1,"objects/study_abbrev"))
+
+res1 = matrix(ncol = 9, dimnames = list(NA,c("tumor", diff_names)))
+for(i in 1:length(tumors)) {
+  res1 = rbind(res1, cbind.data.frame(tumor = tumors[i], tumors_meddiffs[[tumors[i]]]))
+}
+rm(i)
+res1 = res1[-1,]
+res1 = cbind(res1, study= study_abbrev[match(res1$tumor, study_abbrev$abb),"study"])
+
+for(i in diff_names) {
+  bplot(x = i, plog = F)
+  ggsave(filename = paste0(ext_folder1,"01out/plots/all_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
+}
+
+bplot(x = "aff_str_diff", plog = F)
+bplot(x = "rp_str_diff", plog = F)
+bplot(x = "or_str_diff", plog = F)
+bplot(x = "and_str_diff", plog = F)
+bplot(x = "aff_weak_diff", plog = F)
+bplot(x = "rp_weak_diff", plog = F)
+bplot(x = "or_weak_diff", plog = F)
+bplot(x = "and_weak_diff", plog = F)
+
+```
