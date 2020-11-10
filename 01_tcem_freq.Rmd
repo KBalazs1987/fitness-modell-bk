@@ -240,8 +240,7 @@ for(i in 1:length(patdropped)) {
 # save(value_names, file = paste0(ext_folder1,"01out/value_names"))
 ```
 
-##Tumors
-###All mutations - median per individual
+##All mutations - median per individual
 
 ```{r}
 ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
@@ -282,7 +281,7 @@ save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_a
 tumors_medtcemfreqs$acc %>% View()
 ```
 
-###Passenger mutations - median per individual
+##Passenger mutations - median per individual
 
 ```{r}
 ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
@@ -328,7 +327,7 @@ tumors_medtcemfreqs$acc %>% View()
 save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_pass_mpi"))
 ```
 
-###All mutations - not aggragated per individual
+##All mutations - not aggragated per individual
 
 ```{r}
 ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
@@ -350,7 +349,7 @@ names(tumors_medtcemfreqs) = tumors
 save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_napi"))
 ```
 
-###Passenger mutations - not aggragated per individual
+##Passenger mutations - not aggragated per individual
 
 ```{r}
 ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
@@ -384,33 +383,40 @@ tumors_medtcemfreqs$acc %>% View()
 save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_pass_napi"))
 ```
 
-###Plots
+##Plots
+###1
 
 ```{r}
-bplot = function(x, plog = F) {
-  tempdf = res1 %>% select(study, x)
-  colnames(tempdf) = c("study", "diffvar")
-  tempdf %<>% mutate(study = fct_reorder(.f = study, .x = diffvar, .fun = function(z) median(z, na.rm = T)))
-  ylimits = c(quantile(tempdf$diffvar,0.05,na.rm=T),quantile(tempdf$diffvar,0.95,na.rm=T))
-  if(plog == T) {
-    fig = ggplot(tempdf, aes(study, diffvar)) + 
-      geom_boxplot(outlier.shape = NA) + 
-      scale_y_continuous(trans = "pseudo_log", limits = ylimits) +
-      theme(axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90))
-  } else {
-    fig = ggplot(tempdf, aes(study, diffvar)) + 
-      geom_boxplot(outlier.shape = NA) + 
-      scale_y_continuous(limits = ylimits) +
-      theme(axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90))
-  }
-  return(fig)
+bplot = function(x) {
+  sv = c(x,value_names[match(x,value_names)+8])
+  tempdf = res0 %>% select(study, sv)
+  colnames(tempdf) = c("study", "orig", "neo")
+  tempdf %<>% mutate(study = fct_reorder(.f = study, .x = neo, .fun = function(z) median(z, na.rm = T)))
+  tempdf %<>% 
+    tidyr::gather(key = origvsneo, value = mediantcemfreq, 2:3)
+  tempdf$origvsneo = factor(tempdf$origvsneo, levels = c("orig","neo"))
+  fig = ggplot(tempdf, aes(x = study, y = mediantcemfreq, fill = origvsneo)) + 
+    geom_boxplot(outlier.shape = NA) + 
+    scale_y_continuous(trans = "pseudo_log", breaks = seq(2,10,2)) +
+    geom_hline(yintercept = seq(2,10,2), linetype = "dashed") +    
+    theme_bw() +
+      theme(
+        legend.position = "none",
+        axis.title.x = element_text(size = 16, vjust = 0),
+        axis.title.y = element_text(size = 16, vjust = 1),
+        axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90),
+        axis.text.y = element_text(size = 8, color = "black"),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
+    return(fig)
 }
 
 load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_mpi")) #OR
 load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_pass_mpi")) #OR
 load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_napi")) #OR
 load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_pass_napi"))
-
 load(paste0(ext_folder1, "01out/value_names"))
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1,"objects/study_abbrev"))
@@ -423,21 +429,98 @@ rm(i)
 res0 = res0[-1,]
 res0 = cbind(res0, study= study_abbrev[match(res0$tumor, study_abbrev$abb),"study"])
 
-for(i in value_names) {
-  #??bplot(x = i, plog = F)
-  ggsave(filename = paste0(ext_folder1,"01out/plots/pass_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
+for(i in value_names[1:8]) {
+  bplot(x = i)
+  ggsave(filename = paste0(ext_folder1,"01out/plots/all_napi_", i, ".jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
 }
 
-# bplot(x = "aff_str_diff", plog = F)
-# bplot(x = "rp_str_diff", plog = F)
-# bplot(x = "or_str_diff", plog = F)
-# bplot(x = "and_str_diff", plog = F)
-# bplot(x = "aff_weak_diff", plog = F)
-# bplot(x = "rp_weak_diff", plog = F)
-# bplot(x = "or_weak_diff", plog = F)
-# bplot(x = "and_weak_diff", plog = F)
+bplot(x = value_names[4])
+```
+
+###2. Random sampling
+
+```{r}
+load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_napi")) #OR
+load(paste0(ext_folder1,"01out/tumors_medtcemfreqs_pass_napi"))
+
+load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/tumors"))
+load(paste0(ext_folder1,"objects/study_abbrev"))
+
+nonamer_count= sapply(tumors_medtcemfreqs, function(x) {
+  x %<>% as.data.frame()
+  sapply(colnames(x), function(y) {
+    x %>% pull(y) %>% na.omit() %>% length()
+  })
+})
+
+nonamer_mins = sapply(value_names, function(x) {
+  min(nonamer_count[x,])
+})
+
+tcemfreqs_samples = lapply(grep("orig", value_names, value = T), function(k) {
+  k_neo = paste(strsplit(k,"_")[[1]][1], strsplit(k,"_")[[1]][2], "neo", strsplit(k,"_")[[1]][4], sep = "_")
+  temp = lapply(tumors_medtcemfreqs, function(z) {
+    orig = z[,k]
+    orig = orig[!is.na(orig)]
+    neo = z[,k_neo]
+    neo = neo[!is.na(neo)]
+    indices = sample(1:length(orig),nonamer_mins[k])
+    tempmtx = cbind(orig = orig[indices], neo = neo[indices])
+    colnames(tempmtx) = c(k, k_neo)
+    tempmtx
+  })
+  temp = do.call(cbind.data.frame, temp)
+  colnames(temp) = sapply(colnames(temp), function(l) paste(strsplit(l,"\\.")[[1]][1],strsplit(l,"_")[[1]][3], sep = "_"))
+  temp
+})
+names(tcemfreqs_samples) = gsub("_tcem", "", gsub("_orig", "", grep("orig", value_names, value = T)))
+rm(nonamer_mins, nonamer_count)
+
+
+for(i in names(tcemfreqs_samples)) {
+  tempdf = tcemfreqs_samples[[i]]
+  tempdf %<>% gather() %>% separate(col = 1, into = c("tumor", "pepsource"))
+  tempdf$tumor = fct_reorder(.f = tempdf$tumor, .x = tempdf$value)
+  ggplot(tempdf, aes(x = tumor,y = value, fill = pepsource)) + 
+    geom_boxplot() + geom_boxplot(outlier.shape = NA) + 
+    scale_y_continuous(trans = "pseudo_log", breaks = seq(2,10,2)) +
+    geom_hline(yintercept = seq(2,10,2), linetype = "dashed") +    
+    theme_bw() +
+    theme(
+      legend.position = "bottom",
+      axis.title.x = element_text(size = 16, vjust = 0),
+      axis.title.y = element_text(size = 16, vjust = 1),
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90),
+      axis.text.y = element_text(size = 8, color = "black"),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(colour = "black"))
+  ggsave(filename = paste0(ext_folder1,"01out/plots/random_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
+}
+
+
+
+ggplot(tcemfreqs_samples, aes(tumor,value)) + geom_boxplot() + facet_wrap(~var) + scale_y_continuous(trans = "pseudo_log")
+ggsave(filename = paste0(ext_folder1,"01out/plots/01.jpg"), width = 100,height = 100,units = "cm",dpi = 300)
+
+for(i in 1:length(tumors)) {
+  res0 = rbind(res0, cbind.data.frame(tumor = tumors[i], tumors_medtcemfreqs[[tumors[i]]][sample(nrow(tumors_medtcemfreqs[[tumors[i]]]), 5000), ]))
+}
+
+rm(i)
+res0 = res0[-1,]
+res0 = cbind(res0, study= study_abbrev[match(res0$tumor, study_abbrev$abb),"study"])
+
+for(i in value_names[1:8]) {
+  bplot(x = i)
+  ggsave(filename = paste0(ext_folder1,"01out/plots/10k_all_napi_", i, ".jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
+}
+
 
 ```
+
 
 
 #TCEM frequency differencies - original-neo
