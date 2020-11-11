@@ -23,6 +23,7 @@ library(ggplot2)
 library(forcats)
 library(stringi)
 library(Rfast)
+library(tidyr)
 '%nin%' = Negate('%in%')
 fillnafun = function(v,l) {
   outvec = c(v,rep(NA,l-length(v)))
@@ -188,54 +189,81 @@ load(paste0(ext_folder1, "objects/pentamerfreq_tcem"))
 
 lapply(ids, function(x) {
   load(paste0(ext_folder1, "tcem_mutated_nonamers/", x))
-  aff_str_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(aff_str_orig_tcem)>0) names(aff_str_orig_tcem) = paste0(names(tmn_list$aff_str_tmo),".",substr(tmn_list$aff_str_tmo,4,8))
-  rp_str_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(rp_str_orig_tcem)>0) names(rp_str_orig_tcem) = paste0(names(tmn_list$rp_str_tmo),".",substr(tmn_list$rp_str_tmo,4,8))
-  and_str_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(and_str_orig_tcem)>0) names(and_str_orig_tcem) = paste0(names(tmn_list$and_str_tmo),".",substr(tmn_list$and_str_tmo,4,8))
-  or_str_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(or_str_orig_tcem)>0) names(or_str_orig_tcem) = paste0(names(tmn_list$or_str_tmo),".",substr(tmn_list$or_str_tmo,4,8))
-  aff_weak_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(aff_weak_orig_tcem)>0) names(aff_weak_orig_tcem) = paste0(names(tmn_list$aff_weak_tmo),".",substr(tmn_list$aff_weak_tmo,4,8))
-  rp_weak_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(rp_weak_orig_tcem)>0) names(rp_weak_orig_tcem) = paste0(names(tmn_list$rp_weak_tmo),".",substr(tmn_list$rp_weak_tmo,4,8))
-  and_weak_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(and_weak_orig_tcem)>0) names(and_weak_orig_tcem) = paste0(names(tmn_list$and_weak_tmo),".",substr(tmn_list$and_weak_tmo,4,8))
-  or_weak_orig_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmo,4,8),names(pentamerfreq_tcem))]
-  if(length(or_weak_orig_tcem)>0) names(or_weak_orig_tcem) = paste0(names(tmn_list$or_weak_tmo),".",substr(tmn_list$or_weak_tmo,4,8))
-  aff_str_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(aff_str_neo_tcem)>0) names(aff_str_neo_tcem) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmn,4,8))
-  rp_str_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(rp_str_neo_tcem)>0) names(rp_str_neo_tcem) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmn,4,8))
-  and_str_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(and_str_neo_tcem)>0) names(and_str_neo_tcem) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmn,4,8))
-  or_str_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(or_str_neo_tcem)>0) names(or_str_neo_tcem) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmn,4,8))
-  aff_weak_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(aff_weak_neo_tcem)>0) names(aff_weak_neo_tcem) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmn,4,8))
-  rp_weak_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(rp_weak_neo_tcem)>0) names(rp_weak_neo_tcem) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmn,4,8))
-  and_weak_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(and_weak_neo_tcem)>0) names(and_weak_neo_tcem) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmn,4,8))
-  or_weak_neo_tcem = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmn,4,8),names(pentamerfreq_tcem))]
-  if(length(or_weak_neo_tcem)>0) names(or_weak_neo_tcem) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmn,4,8))
+  aff_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_str_orig)>0) names(aff_str_orig) = paste0(names(tmn_list$aff_str_tmo),".",substr(tmn_list$aff_str_tmo,4,8))
+  rp_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_str_orig)>0) names(rp_str_orig) = paste0(names(tmn_list$rp_str_tmo),".",substr(tmn_list$rp_str_tmo,4,8))
+  and_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(and_str_orig)>0) names(and_str_orig) = paste0(names(tmn_list$and_str_tmo),".",substr(tmn_list$and_str_tmo,4,8))
+  or_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(or_str_orig)>0) names(or_str_orig) = paste0(names(tmn_list$or_str_tmo),".",substr(tmn_list$or_str_tmo,4,8))
+  aff_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_weak_orig)>0) names(aff_weak_orig) = paste0(names(tmn_list$aff_weak_tmo),".",substr(tmn_list$aff_weak_tmo,4,8))
+  rp_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_weak_orig)>0) names(rp_weak_orig) = paste0(names(tmn_list$rp_weak_tmo),".",substr(tmn_list$rp_weak_tmo,4,8))
+  and_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(and_weak_orig)>0) names(and_weak_orig) = paste0(names(tmn_list$and_weak_tmo),".",substr(tmn_list$and_weak_tmo,4,8))
+  or_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(or_weak_orig)>0) names(or_weak_orig) = paste0(names(tmn_list$or_weak_tmo),".",substr(tmn_list$or_weak_tmo,4,8))
+  aff_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_str_neo)>0) names(aff_str_neo) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmn,4,8))
+  rp_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_str_neo)>0) names(rp_str_neo) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmn,4,8))
+  and_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_str_neo)>0) names(and_str_neo) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmn,4,8))
+  or_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_str_neo)>0) names(or_str_neo) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmn,4,8))
+  aff_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_weak_neo)>0) names(aff_weak_neo) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmn,4,8))
+  rp_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_weak_neo)>0) names(rp_weak_neo) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmn,4,8))
+  and_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_weak_neo)>0) names(and_weak_neo) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmn,4,8))
+  or_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_weak_neo)>0) names(or_weak_neo) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmn,4,8))
+  
+  #DIFFS
+  aff_str_diff = aff_str_orig - aff_str_neo
+  if(length(aff_str_diff)>0) names(aff_str_diff) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmo,4,8),".",substr(tmn_list$aff_str_tmn,4,8))
+  rp_str_diff = rp_str_orig - rp_str_neo
+  if(length(rp_str_diff)>0) names(rp_str_diff) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmo,4,8),".",substr(tmn_list$rp_str_tmn,4,8))
+  and_str_diff = and_str_orig - and_str_neo
+  if(length(and_str_diff)>0) names(and_str_diff) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmo,4,8),".",substr(tmn_list$and_str_tmn,4,8))
+  or_str_diff = or_str_orig - or_str_neo
+  if(length(or_str_diff)>0) names(or_str_diff) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmo,4,8),".",substr(tmn_list$or_str_tmn,4,8))
+  aff_weak_diff = aff_weak_orig - aff_weak_neo
+  if(length(aff_weak_diff)>0) names(aff_weak_diff) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmo,4,8),".",substr(tmn_list$aff_weak_tmn,4,8))
+  rp_weak_diff = rp_weak_orig - rp_weak_neo
+  if(length(rp_weak_diff)>0) names(rp_weak_diff) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmo,4,8),".",substr(tmn_list$rp_weak_tmn,4,8))
+  and_weak_diff = and_weak_orig - and_weak_neo
+  if(length(and_weak_diff)>0) names(and_weak_diff) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmo,4,8),".",substr(tmn_list$and_weak_tmn,4,8))
+  or_weak_diff = or_weak_orig - or_weak_neo
+  if(length(or_weak_diff)>0) names(or_weak_diff) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmo,4,8),".",substr(tmn_list$or_weak_tmn,4,8))
 
-  tcemfreqs = list(aff_str_orig_tcem = aff_str_orig_tcem, rp_str_orig_tcem = rp_str_orig_tcem, and_str_orig_tcem = and_str_orig_tcem, or_str_orig_tcem = or_str_orig_tcem, aff_weak_orig_tcem = aff_weak_orig_tcem, rp_weak_orig_tcem = rp_weak_orig_tcem, and_weak_orig_tcem = and_weak_orig_tcem, or_weak_orig_tcem = or_weak_orig_tcem, aff_str_neo_tcem = aff_str_neo_tcem, rp_str_neo_tcem = rp_str_neo_tcem, and_str_neo_tcem = and_str_neo_tcem, or_str_neo_tcem = or_str_neo_tcem, aff_weak_neo_tcem = aff_weak_neo_tcem, rp_weak_neo_tcem = rp_weak_neo_tcem, and_weak_neo_tcem = and_weak_neo_tcem, or_weak_neo_tcem = or_weak_neo_tcem)
-  save(tcemfreqs, file = paste0(ext_folder1,"tcem_mutated_nonamers_tcemfreqs/", x))
+  
+  tcemfreqs = list(
+    aff_str_orig = aff_str_orig, aff_str_neo = aff_str_neo, aff_str_diff = aff_str_diff,
+    rp_str_orig = rp_str_orig, rp_str_neo = rp_str_neo, rp_str_diff = rp_str_diff,
+    and_str_orig = and_str_orig, and_str_neo = and_str_neo, and_str_diff = and_str_diff,
+    or_str_orig = or_str_orig, or_str_neo = or_str_neo, or_str_diff = or_str_diff,
+    aff_weak_orig = aff_weak_orig, aff_weak_neo = aff_weak_neo, aff_weak_diff = aff_weak_diff,
+    rp_weak_orig = rp_weak_orig, rp_weak_neo = rp_weak_neo, rp_weak_diff = rp_weak_diff,
+    and_weak_orig = and_weak_orig, and_weak_neo = and_weak_neo, and_weak_diff = and_weak_diff,
+    or_weak_orig = or_weak_orig, or_weak_neo = or_weak_neo, or_weak_diff = or_weak_diff)
+  save(tcemfreqs, file = paste0(ext_folder1,"01out/tcem_mutated_nonamers_tcemfreqs/", x))
 })
 
 #Drop patients without data
 patdropped = ids[sapply(ids, function(x) {
-  load(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs/", x))
+  load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", x))
   all(lengths(tcemfreqs)==0)
 })]
 
 for(i in 1:length(patdropped)) {
-  unlink(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs/", patdropped[i]))
+  unlink(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", patdropped[i]))
 } #8887
 
-# load(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs/", ids[1]))
+# load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", ids[1]))
 # value_names = names(tcemfreqs)
 # save(value_names, file = paste0(ext_folder1,"01out/value_names"))
 ```
@@ -243,7 +271,7 @@ for(i in 1:length(patdropped)) {
 ##All mutations - median per individual
 
 ```{r}
-ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
+ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs")) #8887
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "01out/value_names"))
@@ -252,23 +280,38 @@ tumors_medtcemfreqs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
   tempids = tempids[tempids %in% ids]
   temp_med_tcemfreqs = lapply(tempids, function(y) {
-    load(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs/", y))
-    md = c(aff_str_orig_tcem = median(tcemfreqs$aff_str_orig_tcem, na.rm = T), 
-           rp_str_orig_tcem = median(tcemfreqs$rp_str_orig_tcem, na.rm = T), 
-           or_str_orig_tcem = median(tcemfreqs$or_str_orig_tcem, na.rm = T), 
-           and_str_orig_tcem = median(tcemfreqs$and_str_orig_tcem, na.rm = T), 
-           aff_weak_orig_tcem = median(tcemfreqs$aff_weak_orig_tcem, na.rm = T), 
-           rp_weak_orig_tcem = median(tcemfreqs$rp_weak_orig_tcem, na.rm = T), 
-           or_weak_orig_tcem = median(tcemfreqs$or_weak_orig_tcem, na.rm = T), 
-           and_weak_orig_tcem = median(tcemfreqs$and_weak_orig_tcem, na.rm = T),
-           aff_str_neo_tcem = median(tcemfreqs$aff_str_neo_tcem, na.rm = T), 
-           rp_str_neo_tcem = median(tcemfreqs$rp_str_neo_tcem, na.rm = T), 
-           or_str_neo_tcem = median(tcemfreqs$or_str_neo_tcem, na.rm = T), 
-           and_str_neo_tcem = median(tcemfreqs$and_str_neo_tcem, na.rm = T), 
-           aff_weak_neo_tcem = median(tcemfreqs$aff_weak_neo_tcem, na.rm = T), 
-           rp_weak_neo_tcem = median(tcemfreqs$rp_weak_neo_tcem, na.rm = T), 
-           or_weak_neo_tcem = median(tcemfreqs$or_weak_neo_tcem, na.rm = T), 
-           and_weak_neo_tcem = median(tcemfreqs$and_weak_neo_tcem, na.rm = T))
+    load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", y))
+    md = c(aff_str_orig = median(tcemfreqs$aff_str_orig, na.rm = T), 
+           aff_str_neo = median(tcemfreqs$aff_str_neo, na.rm = T), 
+           aff_str_diff = median(tcemfreqs$aff_str_diff, na.rm = T),
+           
+           rp_str_orig = median(tcemfreqs$rp_str_orig, na.rm = T), 
+           rp_str_neo = median(tcemfreqs$rp_str_neo, na.rm = T), 
+           rp_str_diff = median(tcemfreqs$rp_str_diff, na.rm = T),
+           
+           or_str_orig = median(tcemfreqs$or_str_orig, na.rm = T), 
+           or_str_neo = median(tcemfreqs$or_str_neo, na.rm = T), 
+           or_str_diff = median(tcemfreqs$or_str_diff, na.rm = T),
+           
+           and_str_orig = median(tcemfreqs$and_str_orig, na.rm = T), 
+           and_str_neo = median(tcemfreqs$and_str_neo, na.rm = T), 
+           and_str_diff = median(tcemfreqs$and_str_diff, na.rm = T),
+           
+           aff_weak_orig = median(tcemfreqs$aff_weak_orig, na.rm = T), 
+           aff_weak_neo = median(tcemfreqs$aff_weak_neo, na.rm = T), 
+           aff_weak_diff = median(tcemfreqs$aff_weak_diff, na.rm = T),
+
+           rp_weak_orig = median(tcemfreqs$rp_weak_orig, na.rm = T), 
+           rp_weak_neo = median(tcemfreqs$rp_weak_neo, na.rm = T),
+           rp_weak_diff = median(tcemfreqs$rp_weak_diff, na.rm = T),
+
+           or_weak_orig = median(tcemfreqs$or_weak_orig, na.rm = T), 
+           or_weak_neo = median(tcemfreqs$or_weak_neo, na.rm = T), 
+           or_weak_diff = median(tcemfreqs$or_weak_diff, na.rm = T),
+           
+           and_weak_orig = median(tcemfreqs$and_weak_orig, na.rm = T),
+           and_weak_neo = median(tcemfreqs$and_weak_neo, na.rm = T),
+           and_weak_diff = median(tcemfreqs$and_weak_diff, na.rm = T))
     names(md) = value_names
     md
   })
@@ -276,12 +319,11 @@ tumors_medtcemfreqs = lapply(tumors, function(x) {
   temp_med_tcemfreqs = do.call(rbind,temp_med_tcemfreqs)
 })
 names(tumors_medtcemfreqs) = tumors
-save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_mpi"))
-
 tumors_medtcemfreqs$acc %>% View()
+save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_all_mpi"))
 ```
 
-##Passenger mutations - median per individual
+##INNENTŐL JAVÍTANI!!!!!!!!!!!!!!!!!!!!!!!!!Passenger mutations - median per individual - 
 
 ```{r}
 ids = list.files(paste0(ext_folder1, "tcem_mutated_nonamers_tcemfreqs")) #8887
@@ -384,7 +426,7 @@ save(tumors_medtcemfreqs, file = paste0(ext_folder1,"01out/tumors_medtcemfreqs_p
 ```
 
 ##Plots
-###1
+###1 All
 
 ```{r}
 bplot = function(x) {
@@ -452,11 +494,9 @@ nonamer_count= sapply(tumors_medtcemfreqs, function(x) {
   sapply(colnames(x), function(y) {
     x %>% pull(y) %>% na.omit() %>% length()
   })
-})
+}) #mennyi nonamer van egyes változokhoz tumoronkent
 
-nonamer_mins = sapply(value_names, function(x) {
-  min(nonamer_count[x,])
-})
+nonamer_mins = sapply(value_names, function(x) {min(nonamer_count[x,])}) #az egyes változókból mennyi a minimum nonamer szám
 
 tcemfreqs_samples = lapply(grep("orig", value_names, value = T), function(k) {
   k_neo = paste(strsplit(k,"_")[[1]][1], strsplit(k,"_")[[1]][2], "neo", strsplit(k,"_")[[1]][4], sep = "_")
@@ -481,8 +521,11 @@ rm(nonamer_mins, nonamer_count)
 for(i in names(tcemfreqs_samples)) {
   tempdf = tcemfreqs_samples[[i]]
   tempdf %<>% gather() %>% separate(col = 1, into = c("tumor", "pepsource"))
-  tempdf$tumor = fct_reorder(.f = tempdf$tumor, .x = tempdf$value)
-  ggplot(tempdf, aes(x = tumor,y = value, fill = pepsource)) + 
+  tempdf = cbind(tempdf, study = study_abbrev[match(tempdf$tumor, study_abbrev$abb),"study"])
+  tempdf2 = tempdf[tempdf$pepsource == "neo",]
+  tempdf2$study = fct_reorder(.f = tempdf2$study, .x = tempdf2$value)
+  tempdf$study = factor(tempdf$study, levels = levels(tempdf2$study))
+  ggplot(tempdf, aes(x = study, y = value, fill = pepsource)) + 
     geom_boxplot() + geom_boxplot(outlier.shape = NA) + 
     scale_y_continuous(trans = "pseudo_log", breaks = seq(2,10,2)) +
     geom_hline(yintercept = seq(2,10,2), linetype = "dashed") +    
@@ -497,28 +540,9 @@ for(i in names(tcemfreqs_samples)) {
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       axis.line = element_line(colour = "black"))
-  ggsave(filename = paste0(ext_folder1,"01out/plots/random_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
+  ggsave(filename = paste0(ext_folder1,"01out/plots/random_all_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
 }
-
-
-
-ggplot(tcemfreqs_samples, aes(tumor,value)) + geom_boxplot() + facet_wrap(~var) + scale_y_continuous(trans = "pseudo_log")
-ggsave(filename = paste0(ext_folder1,"01out/plots/01.jpg"), width = 100,height = 100,units = "cm",dpi = 300)
-
-for(i in 1:length(tumors)) {
-  res0 = rbind(res0, cbind.data.frame(tumor = tumors[i], tumors_medtcemfreqs[[tumors[i]]][sample(nrow(tumors_medtcemfreqs[[tumors[i]]]), 5000), ]))
-}
-
-rm(i)
-res0 = res0[-1,]
-res0 = cbind(res0, study= study_abbrev[match(res0$tumor, study_abbrev$abb),"study"])
-
-for(i in value_names[1:8]) {
-  bplot(x = i)
-  ggsave(filename = paste0(ext_folder1,"01out/plots/10k_all_napi_", i, ".jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
-}
-
-
+rm(tempdf,tempdf2,i)
 ```
 
 
@@ -741,7 +765,7 @@ res1 = cbind(res1, study= study_abbrev[match(res1$tumor, study_abbrev$abb),"stud
 
 for(i in diff_names) {
   bplot(x = i, plog = F)
-  ggsave(filename = paste0(ext_folder1,"01out/plots/pass_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
+  ggsave(filename = paste0(ext_folder1,"01out/plots/diffs/pass_napi_", i, ".jpg"), width = 20, height = 20, units = "cm", dpi = "retina")
 }
 
 # bplot(x = "aff_str_diff", plog = F)
