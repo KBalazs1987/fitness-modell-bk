@@ -18,12 +18,14 @@ setwd("d:/CloudStation/mygit/fitness-modell-bk/")
 ext_folder1 = "d:/CloudStation/fitness-model-ext/"
 library(dplyr)
 library(magrittr)
+library(tibble)
 library(fastmatch)
 library(ggplot2)
 library(forcats)
 library(stringi)
 library(Rfast)
 library(tidyr)
+library(parallel)
 '%nin%' = Negate('%in%')
 fillnafun = function(v,l) {
   outvec = c(v,rep(NA,l-length(v)))
@@ -686,17 +688,34 @@ pat_neolowtcemfreq = t(pat_neolowtcemfreq)
 save(pat_neolowtcemfreq, file = paste0(ext_folder1,"01out/patients_neolowtcemfreq"))
 ```
 
-#INNEN FOLYT#Survival
+##Survival
 
 ```{r}
 load(paste0(ext_folder1,"01out/patients_neolowtcemfreq"))
-ids = list.files(paste0(ext_folder1, "clinical")) #8943
-patsurv = t(sapply(ids, function(x) {
-  load(paste0(ext_folder1, "clinical/", x))
-  clinical[c("clinical_AGE", "clinical_GENDER", "clinical_OS", "clinical_OS.time", "clinical_DSS", "clinical_DSS.time", "clinical_DFI", "clinical_DFI.time", "clinical_PFI", "clinical_PFI.time")]
-}))
+ids = list.files(paste0(ext_folder1, "clinical")) #10967
 
-data = cbind.data.frame(pat_neolowtcemfreq, patsurv[match(rownames(pat_neolowtcemfreq), rownames(patsurv)),])
+no_cores <- detectCores() - 1
+cl <- makeCluster(no_cores)
+#Load clinical data
+clinical = parSapply(cl, list.files("d:/CloudStation/fitness-model-ext/clinical"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/clinical/", x))
+  return(clinical)
+})
+stopCluster(cl)
+rm(cl, no_cores)
+
+clinical %<>%
+  t() %>%
+  as.data.frame(, stringsAsFactors = F) %>%
+  rownames_to_column(var = "SampleID") %>% 
+  mutate_at(, .vars = c("clinical_AGE", "clinical_OS", "clinical_OS.time", "clinical_DSS", "clinical_DSS.time", "clinical_DFI", "clinical_DFI.time", "clinical_PFI", "clinical_PFI.time"), .funs = as.numeric) %>%
+  select(SampleID, clinical_AGE, clinical_GENDER, clinical_OS, clinical_OS.time, clinical_DSS, clinical_DSS.time, clinical_DFI, clinical_DFI.time, clinical_PFI, clinical_PFI.time, clinical_HISTORY_NEOADJUVANT_TRTYN)
+#"clinical_HISTORY_NEOADJUVANT_TRTYN" = No
+
+data = cbind.data.frame(pat_neolowtcemfreq, clinical[match(rownames(pat_neolowtcemfreq), clinical$SampleID),])
+
+
+
 ```
 
 
