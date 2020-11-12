@@ -627,6 +627,7 @@ for(i in vals) {
   tempdf = neolowtcemfreq[neolowtcemfreq$bt == i,]
   tempdf = cbind(tempdf, study = study_abbrev[match(tempdf$tumor, study_abbrev$abb),"study"])
   tempdf$study = fct_reorder(.f = tempdf$study, .x = tempdf$ratio)
+  View(data.frame(levels(tempdf$study)))
   ggplot(tempdf, aes(study, ratio)) + geom_point() + theme(axis.text.x = element_text(angle = 90))
   ggsave(filename = paste0(ext_folder1,"01out/plots/neolowtcemfreq_",i,".jpg"), width = 25,height = 15,units = "cm",dpi = "retina")
 }
@@ -685,7 +686,7 @@ pat_neolowtcemfreq = t(pat_neolowtcemfreq)
 save(pat_neolowtcemfreq, file = paste0(ext_folder1,"01out/patients_neolowtcemfreq"))
 ```
 
-##Survival
+#INNEN FOLYT#Survival
 
 ```{r}
 load(paste0(ext_folder1,"01out/patients_neolowtcemfreq"))
