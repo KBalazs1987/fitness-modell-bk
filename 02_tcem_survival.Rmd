@@ -1,0 +1,245 @@
+---
+title: "02_tcem_survival"
+author: "Balazs Koncz"
+date: '2020 11 13 '
+output: html_document
+---
+#Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	fig.path = "Figs/"
+)
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+packs <- c("dplyr", "magrittr", "tibble", "fastmatch", "ggplot2", "stringr", "forcats", "stringi", "Rfast", "tidyr", "parallel", "survival", "survminer", "testit", "beepr")
+invisible(lapply(packs, require, character.only = TRUE))
+```
+
+#Ratio of neononamers with low TCEM frequency (<4)
+
+```{r}
+load(paste0(ext_folder1, "objects/driver_mutations"))
+ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/"))
+load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", ids[1]))
+vals = unique(gsub("_diff", "", gsub("_neo", "", gsub("_orig", "", names(tcemfreqs)))))
+rm(tcemfreqs)
+
+i=0
+pat_neolowtcemfreq = sapply(ids, function(x) {
+  i = i+1
+  .GlobalEnv$i = i
+  load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", x))
+  tcemfreqs = lapply(tcemfreqs, function(z) {
+    tempmuts = sapply(names(z), function(w) paste0(strsplit(w,"\\.")[[1]][1:3], collapse = "."))
+    names(z) = tempmuts
+    z = z[names(z) %nin% driver]
+  })
+  m = max(lengths(tcemfreqs), na.rm = T)
+  if(m == 1) {
+    emptyvec = rep(NA, 16)
+    names(emptyvec) = c(paste(vals, "ncount", sep = "_"),vals)
+    return(emptyvec)
+  } else {
+    tcemfreqs = as.data.frame(sapply(tcemfreqs, function(p) fillnafun(p, m))) #create df
+    nonamerscount = sapply(vals, function(y) {
+      tempdf2 = na.omit(tcemfreqs[,c(paste0(y, "_orig"), paste0(y, "_neo"))])
+      nmercount = nrow(tempdf2)
+      names(nmercount) = y
+      nmercount
+    })
+    names(nonamerscount) = paste(vals, "ncount", sep = "_")
+    ratios = sapply(vals, function(y) {
+      tempdf2 = na.omit(tcemfreqs[,c(paste0(y, "_orig"), paste0(y, "_neo"))])
+      colnames(tempdf2) = c("orig","neo")
+      ratio = nrow(subset(tempdf2, orig >= 4 & neo < 4)) / nrow(tempdf2)
+      names(ratio) = y
+      ratio
+    })
+    names(ratios) = vals
+    return(c(nonamerscount,ratios))
+  }
+})
+pat_neolowtcemfreq = t(pat_neolowtcemfreq)
+save(pat_neolowtcemfreq, file = paste0(ext_folder1,"02out/patients_neolowtcemfreq"))
+```
+
+#Patient characteristics
+
+```{r}
+no_cores <- detectCores() - 1
+c1 <- makeCluster(no_cores)
+
+#MUTATION COUNT
+mutcnt = parSapply(c1, list.files("D:/CloudStation/fitness-model-ext/tcga_data/neoeps"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/neoeps/", x))
+  length(neoeps_list)
+})
+
+#TUMOR TYPE
+tumortype = parSapply(c1, list.files("D:/CloudStation/fitness-model-ext/tcga_data/ttypes"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/ttypes/", x))
+  ttype
+})
+
+#CLINICAL
+clinical = parSapply(c1, list.files("d:/CloudStation/fitness-model-ext/tcga_data/clinical"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/clinical/", x))
+  return(clinical)
+})
+
+clinical %<>%
+  t() %>%
+  as.data.frame(stringsAsFactors = F) %>%
+  rownames_to_column(var = "SampleID") %>%
+  mutate_at(.vars = c("clinical_AGE", "clinical_OS", "clinical_OS.time", "clinical_DSS", "clinical_DSS.time", "clinical_DFI", "clinical_DFI.time", "clinical_PFI", "clinical_PFI.time"), .funs = as.numeric) %>%
+  select(SampleID, clinical_AGE, clinical_GENDER, clinical_OS, clinical_OS.time, clinical_DSS, clinical_DSS.time, clinical_DFI, clinical_DFI.time, clinical_PFI, clinical_PFI.time, clinical_HISTORY_NEOADJUVANT_TRTYN)
+
+#Load LOH data
+cna_data = parSapply(c1, list.files("d:/CloudStation/fitness-model-ext/tcga_data/cna"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/cna/", x))
+  return(cna[c("HLA-A", "HLA-B", "HLA-C", "B2M")])
+})
+
+cna_data %<>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "SampleID") %>%
+  rename(loh_a = 'HLA-A', loh_b = 'HLA-B', loh_c = 'HLA-C', loh_b2m = 'B2M') %>%
+  mutate(loh = ifelse(loh_a != 0 | loh_b != 0 | loh_c != 0 | loh_b2m != 0, TRUE, FALSE))
+
+stopCluster(c1)
+rm(c1, no_cores)
+
+load(paste0(ext_folder1,"02out/patients_neolowtcemfreq"))
+pat_neolowtcemfreq = as.data.frame(pat_neolowtcemfreq)
+pat_neolowtcemfreq$SampleID = rownames(pat_neolowtcemfreq)
+
+cohort = clinical %>%
+  left_join(pat_neolowtcemfreq, by = "SampleID") %>%
+  left_join(cna_data, by = "SampleID")
+cohort = cbind(cohort, mutcnt = mutcnt[match(cohort$SampleID, names(mutcnt))])
+cohort = cbind(cohort, tumortype = tumortype[match(cohort$SampleID, names(tumortype))])
+
+cohort %<>% transform(clinical_GENDER = factor(clinical_GENDER, levels = c("Male", "Female")))
+
+rm(clinical, cna_data, pat_neolowtcemfreq, mutcnt, tumortype)
+
+save(cohort, file = paste0(ext_folder1,"02out/cohort_tcga"))
+```
+
+#Objects for survival analysis
+
+```{r}
+load(paste0(ext_folder1,"02out/patients_neolowtcemfreq"))
+tcemvars = colnames(pat_neolowtcemfreq)[!grepl("_ncount", colnames(pat_neolowtcemfreq))]
+rm(pat_neolowtcemfreq)
+load(paste0(ext_folder1,"02out/cohort_tcga"))
+freq_tumors = names(table(cohort$tumortype))[table(cohort$tumortype) > 50]
+
+res = expand.grid(tumor = c("all", freq_tumors), im.tumor.filt = c("all", "im_tumor"), survival.type = c("os", "dss", "dfi", "pfi"), loh = c("all", "notloh"), tcemv = tcemvars, tcemv_filter = c("no", "yes"), stringsAsFactors = F)
+
+res_ftest = res
+
+res %<>%
+  mutate(n.all = NA ,n.low = NA, n.high = NA, obs.exp.dif.high = NA, chisq.high = NA, p.chisq = NA, 
+         clinical_AGE = NA, clinical_GENDERFemale = NA, lohTRUE = NA, mutcnt = NA, tcemgroup = NA,
+         warning = NA)
+
+res_ftest %<>%
+  mutate(clinical_AGE = NA, clinical_GENDER = NA, loh = NA, mutcnt = NA, tcemgroup = NA, GLOBAL = NA, warning = NA)
+
+#surv_diff$obs[2] - surv_diff$exp[2] > 0 -> a vártnál több esemény a 2-es csoportban - GOOD
+```
+
+#Survival analysis
+
+```{r}
+cutpoint = 0.4
+for(i in 1:nrow(res)) {
+  tryCatch({  
+    print(i)
+    #Select tumor
+    if(res$tumor[i] != "all") {cohort_f = cohort %>% filter(tumortype == res$tumor[i]) %>% filter(clinical_HISTORY_NEOADJUVANT_TRTYN == "No")
+    } else {cohort_f = cohort %>% filter(clinical_HISTORY_NEOADJUVANT_TRTYN == "No")
+    }
+    if(nrow(cohort_f) < 50) {next()}
+    #Filter immunogen tumor
+    if(res$im.tumor.filt[i] == "im_tumor") cohort_f %<>% filter(mutcnt > median(mutcnt, na.rm = T))
+    #Set survival time
+    if(res$survival.type[i] == "os") {
+      cohort_f %<>% rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+    } else if(res$survival.type[i] == "dss") {
+      cohort_f %<>% rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+    } else if(res$survival.type[i] == "dfi") {
+      cohort_f %<>% rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+    } else if(res$survival.type[i] == "pfi") {
+      cohort_f %<>% rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+    }
+    #filter loh
+    if(res$loh[i] == "notloh") cohort_f %<>% filter(loh == FALSE)
+    #select tcemvars
+    colnames(cohort_f)[fmatch(res$tcemv[i], colnames(cohort_f))] = "tcemvar"
+    colnames(cohort_f)[fmatch(paste0(res$tcemv[i], "_ncount"), colnames(cohort_f))] = "tcemvar_ncount"
+    cohort_f %<>%  filter(!is.na(tcemvar))
+    #filter neoep count connected to tcemvar
+    if(res$tcemv_filter[i] == "yes") cohort_f %<>%  filter(tcemvar_ncount >= 10)
+    #
+    res$n.all[i] = nrow(cohort_f)
+    if(nrow(cohort_f) < 30) {next()}
+    cohort_f$tcemgroup = cut(x = cohort_f$tcemvar, breaks = c(0,cutpoint,1), include.lowest = T, labels = F, right = F)
+    table(cohort_f$tcemgroup)
+    cohort_f %<>% select(SampleID, OS_Event, OS_Time, clinical_AGE, clinical_GENDER, tcemvar, loh, mutcnt, tcemgroup) %>% filter(!is.na(OS_Event), !is.na(OS_Time))
+    
+    # ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:6]), sep = " ", collapse = " "), font.main = 8)
+    # ggsave(filename = paste0(ext_folder1,"02out/survplots/", paste(res[i,1:9], collapse = "_"), ".jpg"), width = 15, height = 15, units = "cm")
+    surv_diff = survdiff(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f)
+    res$n.low[i] = surv_diff$n["tcemgroup=1"]
+    res$n.high[i] = surv_diff$n["tcemgroup=2"]
+    res$obs.exp.dif.high[i] = surv_diff$obs[2] - surv_diff$exp[2]
+    res$chisq.high[i] = (surv_diff$obs[2] - surv_diff$exp[2])^2/surv_diff$exp[2]
+    res$p.chisq[i] = 1 - pchisq(surv_diff$chisq, length(surv_diff$n) - 1)
+    
+    cohort_f %<>% na.omit()
+    #FILTER 2.
+    if(nrow(cohort_f) < 30) {next()}
+    #FILTER 3.
+    if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) {next()}
+    
+    fit = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f)
+    res[i,rownames(coef(summary(fit)))] = t(as.matrix(coef(summary(fit))))["Pr(>|z|)",]
+    res$warning[i] = has_warning(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f))
+    
+    ftest = cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f))
+    res_ftest[i,rownames(ftest$table)] = t(ftest$table)[3,]
+    res_ftest$warning[i] = has_warning(cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f)))
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+beep(sound = "ping")
+
+ggforest(coxph(Surv(OS_Time, OS_Event) ~ a + clinical_GENDER + m + hz + p, data = cohort_f), data = cohort_f)
+
+save(res, res_ftest, file = paste0(ext_folder1,"02out/survival_cutpoint40"))
+```
+
+
+```{r}
+
+
+
+#Tumoronként kell megnézni
+
+patprops = cbind(pat_neolowtcemfreq, clinical[match(rownames(pat_neolowtcemfreq), clinical$SampleID),])
+patprops$group = cut(x = patprops$aff_str, breaks = quantile(patprops$aff_str,c(0,0.92,1),na.rm = T), include.lowest = T)
+table(patprops$group)
+patprops$Time = patprops$clinical_OS.time
+patprops$Event = patprops$clinical_OS
+ggsurvplot(fit = survfit(Surv(time = Time, event = Event) ~ group, data = patprops), pval = TRUE, legend.title = "", surv.median.line = c("hv"), title = "")
+
+
+```
+
