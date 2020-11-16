@@ -129,7 +129,7 @@ for(i in 1:length(patdropped)) {
 ids = list.files(paste0(ext_folder1, "02out/tcem_mutated_nonamers_tcemexprs")) #8887
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemexprs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -178,7 +178,7 @@ ids = list.files(paste0(ext_folder1, "02out/tcem_mutated_nonamers_tcemexprs")) #
 load(paste0(ext_folder1, "objects/driver_mutations"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "objects/tumors"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemexprs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -254,7 +254,7 @@ ids = list.files(paste0(ext_folder1, "02out/tcem_mutated_nonamers_tcemexprs")) #
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "objects/driver_mutations"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemexprs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -285,7 +285,7 @@ save(tumors_tcemexprs, file = paste0(ext_folder1,"02out/tumors_tcemexprs_pass_na
 ###1 All
 
 ```{r}
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1,"objects/study_abbrev"))
 
@@ -295,12 +295,12 @@ bplot = function(x) {
   colnames(tempdf) = c("study", "orig", "neo")
   tempdf %<>% mutate(study = fct_reorder(.f = study, .x = neo, .fun = function(z) median(z, na.rm = T)))
   tempdf %<>% 
-    tidyr::gather(key = origvsneo, value = mediantcemfreq, 2:3)
+    tidyr::gather(key = origvsneo, value = mediantcemexpr, 2:3)
   tempdf$origvsneo = factor(tempdf$origvsneo, levels = c("orig","neo"))
-  fig = ggplot(tempdf, aes(x = study, y = mediantcemfreq, fill = origvsneo)) + 
+  fig = ggplot(tempdf, aes(x = study, y = mediantcemexpr, fill = origvsneo)) + 
     geom_boxplot(outlier.shape = NA) + 
-    scale_y_continuous(trans = "pseudo_log", breaks = seq(2,10,2)) +
-    geom_hline(yintercept = seq(2,10,2), linetype = "dashed") +    
+    scale_y_continuous(trans = "pseudo_log", breaks = c(.25,.5,.75,1,2)) +
+    geom_hline(yintercept = c(.25,.5,.75,1,2), linetype = "dashed") +    
     theme_bw() +
       theme(
         legend.position = "none",
@@ -321,8 +321,8 @@ bplot_diff = function(z) {
   tempdf %<>% mutate(study = fct_reorder(.f = study, .x = diff, .fun = function(z) median(z, na.rm = T)))
   fig = ggplot(tempdf, aes(x = study, y = diff)) + 
     geom_boxplot(outlier.shape = NA) + 
-    scale_y_continuous(trans = "pseudo_log", breaks = seq(1,5,1)) +
-    geom_hline(yintercept = seq(1,5,1), linetype = "dashed") +    
+    scale_y_continuous(trans = "pseudo_log", breaks = c(-.5,-.25,0,.25,.5)) +
+    geom_hline(yintercept = c(-.5,-.25,0,.25,.5), linetype = "dashed") +    
     theme_bw() +
       theme(
         legend.position = "none",
@@ -341,7 +341,7 @@ tcemexprs_files = grep("tumors_tcemexprs", list.files(paste0(ext_folder1,"02out/
 
 for(i in tcemexprs_files) {
   id1 = paste0(strsplit(i,"_")[[1]][3:4], collapse = "_")
-  load(paste0(ext_folder1,"01out/", i))
+  load(paste0(ext_folder1,"02out/", i))
   res0 = matrix(ncol = (length(value_names)+1), dimnames = list(NA,c("tumor", value_names)))
   for(i in 1:length(tumors)) {
     res0 = rbind(res0, cbind.data.frame(tumor = tumors[i], tumors_tcemexprs[[tumors[i]]]))
@@ -353,13 +353,13 @@ for(i in tcemexprs_files) {
   for(j in grep("orig", value_names, value = T)) {
     id2 = paste(strsplit(j,"_")[[1]][1],strsplit(j,"_")[[1]][2],sep = "_")
     bplot(x = j)
-    ggsave(filename = paste0(ext_folder1,"01out/plots/", id1, "_", id2, ".jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
+    ggsave(filename = paste0(ext_folder1,"02out/plots/", id1, "_", id2, ".jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
   }
   #PLOT - diff
   for(k in grep("diff", value_names, value = T)) {
     id3 = paste(strsplit(k,"_")[[1]][1],strsplit(k,"_")[[1]][2],sep = "_")
     bplot_diff(z = k)
-    ggsave(filename = paste0(ext_folder1,"01out/plots/", id1, "_", id3, "_diff.jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
+    ggsave(filename = paste0(ext_folder1,"02out/plots/", id1, "_", id3, "_diff.jpg"), width = 35, height = 25, units = "cm", dpi = "retina")
   }
 }
 
@@ -371,7 +371,7 @@ for(i in tcemexprs_files) {
 load(paste0(ext_folder1,"02out/tumors_tcemexprs_all_napi")) #OR
 load(paste0(ext_folder1,"02out/tumors_tcemexprs_pass_napi"))
 
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1,"objects/study_abbrev"))
 
@@ -418,8 +418,8 @@ for(i in names(tcemexprs_samples)) {
   tempdf_on$pepsource = factor(tempdf_on$pepsource, levels = c("orig", "neo"))
   ggplot(tempdf_on, aes(x = study, y = value, fill = pepsource)) + 
     geom_boxplot() + geom_boxplot(outlier.shape = NA) + 
-    scale_y_continuous(trans = "pseudo_log", breaks = seq(2,10,2)) +
-    geom_hline(yintercept = seq(2,10,2), linetype = "dashed") +    
+    scale_y_continuous(trans = "pseudo_log", breaks = c(.25,.5,.75,1,2)) +
+    geom_hline(yintercept = c(.25,.5,.75,1,2), linetype = "dashed") +    
     theme_bw() +
     theme(
       legend.position = "bottom",
@@ -431,7 +431,7 @@ for(i in names(tcemexprs_samples)) {
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       axis.line = element_line(colour = "black"))
-  ggsave(filename = paste0(ext_folder1,"02out/plots_expr/random_pass_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
+  ggsave(filename = paste0(ext_folder1,"02out/plots/random_pass_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
   #DIFF
   tempdf_dif = tempdf[,colnames(tempdf)[grepl("diff", colnames(tempdf))]]
   tempdf_dif %<>% gather() %>% separate(col = 1, into = "tumor")
@@ -439,8 +439,8 @@ for(i in names(tcemexprs_samples)) {
   tempdf_dif$study = fct_reorder(.f = tempdf_dif$study, .x = tempdf_dif$value)
   ggplot(tempdf_dif, aes(x = study, y = value)) + 
     geom_boxplot() + geom_boxplot(outlier.shape = NA) + 
-    scale_y_continuous(trans = "pseudo_log", breaks = seq(1,5,1)) +
-    geom_hline(yintercept = seq(1,5,1), linetype = "dashed") +    
+    scale_y_continuous(trans = "pseudo_log", breaks = c(-.5,-.25,0,.25,.5)) +
+    geom_hline(yintercept = c(-.5,-.25,0,.25,.5), linetype = "dashed") +    
     theme_bw() +
     theme(
       legend.position = "bottom",
@@ -452,7 +452,42 @@ for(i in names(tcemexprs_samples)) {
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       axis.line = element_line(colour = "black"))
-  ggsave(filename = paste0(ext_folder1,"02out/plots_expr/random_pass_diff_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
+  ggsave(filename = paste0(ext_folder1,"02out/plots/random_pass_diff_",i,".jpg"), width = 35,height = 25,units = "cm",dpi = "retina")
 }
 rm(tempdf,tempdf2,i)
 ```
+
+#Ratio of neononamers with low TCEM expression (<4)
+cutoff: 33% - 0.203075, 66% - 1.095007
+
+```{r}
+load(paste0(ext_folder1,"objects/study_abbrev"))
+load(paste0(ext_folder1,"02out/tumors_tcemexprs_pass_napi"))
+vals = unique(gsub("_diff", "", gsub("_neo", "", gsub("_orig", "", colnames(tumors_tcemexprs$acc)))))
+
+neolowtcemexpr = sapply(tumors_tcemexprs, function(x) {
+  tempdf = as.data.frame(x)
+  sapply(vals, function(y) {
+    tempdf2 = na.omit(tempdf[,c(paste0(y, "_orig"), paste0(y, "_neo"))])
+    colnames(tempdf2) = c("orig","neo")
+    ratio = nrow(subset(tempdf2, orig >= 0.203075 & orig < 1.095007 & neo < 0.203075)) / nrow(tempdf2)
+    names(ratio) = y
+    ratio
+  })
+})
+
+neolowtcemexpr = as.data.frame(neolowtcemexpr)
+neolowtcemexpr$bt = vals #binding_type
+neolowtcemexpr = gather(data = neolowtcemexpr, key = "tumor", value = "ratio", -bt)
+
+for(i in vals) {
+  tempdf = neolowtcemexpr[neolowtcemexpr$bt == i,]
+  tempdf = cbind(tempdf, study = study_abbrev[match(tempdf$tumor, study_abbrev$abb),"study"])
+  tempdf$study = fct_reorder(.f = tempdf$study, .x = tempdf$ratio)
+  #View(data.frame(levels(tempdf$study)))
+  ggplot(tempdf, aes(study, ratio)) + geom_point() + theme(axis.text.x = element_text(angle = 90))
+  ggsave(filename = paste0(ext_folder1,"02out/plots/neolowtcemexpr_",i,".jpg"), width = 25,height = 15,units = "cm",dpi = "retina")
+}
+
+```
+

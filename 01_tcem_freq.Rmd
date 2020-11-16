@@ -268,7 +268,7 @@ for(i in 1:length(patdropped)) {
 
 # load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", ids[1]))
 # value_names = names(tcemfreqs)
-# save(value_names, file = paste0(ext_folder1,"01out/value_names"))
+# save(value_names, file = paste0(ext_folder1,"objects/value_names"))
 ```
 
 ##All mutations - median per individual
@@ -277,7 +277,7 @@ for(i in 1:length(patdropped)) {
 ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs")) #8887
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemfreqs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -326,7 +326,7 @@ ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs")) #
 load(paste0(ext_folder1, "objects/driver_mutations"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "objects/tumors"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemfreqs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -402,7 +402,7 @@ ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs")) #
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1, "objects/tumortypes"))
 load(paste0(ext_folder1, "objects/driver_mutations"))
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 
 tumors_tcemfreqs = lapply(tumors, function(x) {
   tempids = names(tt)[tt == x]
@@ -433,7 +433,7 @@ save(tumors_tcemfreqs, file = paste0(ext_folder1,"01out/tumors_tcemfreqs_pass_na
 ###1 All
 
 ```{r}
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1,"objects/study_abbrev"))
 
@@ -519,7 +519,7 @@ for(i in tcemfreqs_files) {
 load(paste0(ext_folder1,"01out/tumors_tcemfreqs_all_napi")) #OR
 load(paste0(ext_folder1,"01out/tumors_tcemfreqs_pass_napi"))
 
-load(paste0(ext_folder1, "01out/value_names"))
+load(paste0(ext_folder1, "objects/value_names"))
 load(paste0(ext_folder1, "objects/tumors"))
 load(paste0(ext_folder1,"objects/study_abbrev"))
 
