@@ -1,5 +1,5 @@
 ---
-title: "02_tcem_survival"
+title: "03_tcem_survival"
 author: "Balazs Koncz"
 date: '2020 11 13 '
 output: html_document
@@ -140,7 +140,7 @@ rm(pat_neolowtcemfreq)
 load(paste0(ext_folder1,"02out/cohort_tcga"))
 freq_tumors = names(table(cohort$tumortype))[table(cohort$tumortype) > 50]
 
-res = expand.grid(tumor = c("all", freq_tumors), im.tumor.filt = c("all", "im_tumor"), survival.type = c("os", "dss", "dfi", "pfi"), loh = c("all", "notloh"), tcemv = tcemvars, tcemv_filter = c("no", "yes"), stringsAsFactors = F)
+res = expand.grid(tumor = c("all", freq_tumors), im.tumor.filt = c("all", "im_tumor"), survival.type = c("os", "dss", "dfi", "pfi"), loh = c("all", "notloh"), tcemv = tcemvars, tcemv.cutpoint = seq(0.2,0.5,0.05), tcemv_filter = c("no", "yes"), stringsAsFactors = F)
 
 res_ftest = res
 
@@ -158,7 +158,9 @@ res_ftest %<>%
 #Survival analysis
 
 ```{r}
-cutpoint = 0.4
+
+
+
 for(i in 1:nrow(res)) {
   tryCatch({  
     print(i)
@@ -190,11 +192,12 @@ for(i in 1:nrow(res)) {
     #
     res$n.all[i] = nrow(cohort_f)
     if(nrow(cohort_f) < 30) {next()}
-    cohort_f$tcemgroup = cut(x = cohort_f$tcemvar, breaks = c(0,cutpoint,1), include.lowest = T, labels = F, right = F)
-    table(cohort_f$tcemgroup)
+    #Create TCEM freq group
+    cohort_f$tcemgroup = cut(x = cohort_f$tcemvar, breaks = c(0,res$tcemv.cutpoint[i],1), include.lowest = T, labels = F, right = F)
+    #table(cohort_f$tcemgroup)
     cohort_f %<>% select(SampleID, OS_Event, OS_Time, clinical_AGE, clinical_GENDER, tcemvar, loh, mutcnt, tcemgroup) %>% filter(!is.na(OS_Event), !is.na(OS_Time))
     
-    # ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:6]), sep = " ", collapse = " "), font.main = 8)
+    # ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:7]), sep = " ", collapse = " "), font.main = 8)
     # ggsave(filename = paste0(ext_folder1,"02out/survplots/", paste(res[i,1:9], collapse = "_"), ".jpg"), width = 15, height = 15, units = "cm")
     surv_diff = survdiff(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f)
     res$n.low[i] = surv_diff$n["tcemgroup=1"]
@@ -219,11 +222,54 @@ for(i in 1:nrow(res)) {
   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
+save(res, res_ftest, file = paste0(ext_folder1,"02out/survival"))  
 beep(sound = "ping")
+```
 
-ggforest(coxph(Surv(OS_Time, OS_Event) ~ a + clinical_GENDER + m + hz + p, data = cohort_f), data = cohort_f)
+#♠Survplot
+LUSC: 9937, 6673
+SKCM: 10841, 10777 - or_weak, rp_weak
+BRCA: 36868
 
-save(res, res_ftest, file = paste0(ext_folder1,"02out/survival_cutpoint40"))
+```{r}
+load(paste0(ext_folder1,"02out/survival"))
+load(paste0(ext_folder1,"02out/cohort_tcga"))
+res %>% filter(obs.exp.dif.high>0, n.high>20, tcemgroup<0.05) %>% pull(tumor) %>% table() %>% sort()
+
+
+i=36868
+if(res$tumor[i] != "all") {cohort_f = cohort %>% filter(tumortype == res$tumor[i]) %>% filter(clinical_HISTORY_NEOADJUVANT_TRTYN == "No")
+} else {cohort_f = cohort %>% filter(clinical_HISTORY_NEOADJUVANT_TRTYN == "No")
+}
+if(nrow(cohort_f) < 50) {next()}
+if(res$im.tumor.filt[i] == "im_tumor") cohort_f %<>% filter(mutcnt > median(mutcnt, na.rm = T))
+if(res$survival.type[i] == "os") {
+  cohort_f %<>% rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+} else if(res$survival.type[i] == "dss") {
+  cohort_f %<>% rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+} else if(res$survival.type[i] == "dfi") {
+  cohort_f %<>% rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+} else if(res$survival.type[i] == "pfi") {
+  cohort_f %<>% rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+}
+if(res$loh[i] == "notloh") cohort_f %<>% filter(loh == FALSE)
+colnames(cohort_f)[fmatch(res$tcemv[i], colnames(cohort_f))] = "tcemvar"
+colnames(cohort_f)[fmatch(paste0(res$tcemv[i], "_ncount"), colnames(cohort_f))] = "tcemvar_ncount"
+cohort_f %<>%  filter(!is.na(tcemvar))
+if(res$tcemv_filter[i] == "yes") cohort_f %<>%  filter(tcemvar_ncount >= 10)
+res$n.all[i] = nrow(cohort_f)
+if(nrow(cohort_f) < 30) {next()}
+cohort_f$tcemgroup = cut(x = cohort_f$tcemvar, breaks = c(0,res$tcemv.cutpoint[i],1), include.lowest = T, labels = F, right = F)
+table(cohort_f$tcemgroup)
+cohort_f %<>% select(SampleID, OS_Event, OS_Time, clinical_AGE, clinical_GENDER, tcemvar, loh, mutcnt, tcemgroup) %>% filter(!is.na(OS_Event), !is.na(OS_Time))
+
+ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:7]), sep = " ", collapse = " "), font.main = 8)
+
+survdiff(Surv(time = OS_Time, event = OS_Event) ~ tcemgroup, data = cohort_f)
+cohort_f %<>% na.omit()
+coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f)
+ggforest(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemgroup, data = cohort_f), data = cohort_f)
+
 ```
 
 
