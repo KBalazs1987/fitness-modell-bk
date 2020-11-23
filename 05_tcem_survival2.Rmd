@@ -1,0 +1,842 @@
+---
+title: "03_tcem_survival"
+author: "Balazs Koncz"
+date: '2020 11 13 '
+output: html_document
+---
+#Setup
+
+```{r setup, include=FALSE}
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+packs <- c("magrittr", "tibble", "fastmatch", "ggplot2", "stringr", "forcats", "stringi", "Rfast", "tidyr", "parallel", "survival", "survminer", "testit", "beepr", "ComplexHeatmap", "circlize", "gridExtra")
+invisible(lapply(packs, require, character.only = TRUE))
+rm(packs)
+# '%nin%' = Negate('%in%')
+# fillnafun = function(v,l) {
+#   outvec = c(v,rep(NA,l-length(v)))
+#   names(outvec) = NULL
+#   outvec
+# }
+
+```
+
+#Cohort assembly
+##Patient characteristics
+
+```{r}
+no_cores <- detectCores() - 1
+c1 <- makeCluster(no_cores)
+
+#MUTATION COUNT
+mutcnt = parSapply(c1, list.files("D:/CloudStation/fitness-model-ext/tcga_data/neoeps"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/neoeps/", x))
+  length(neoeps_list)
+})
+
+#TUMOR TYPE
+tumortype = parSapply(c1, list.files("D:/CloudStation/fitness-model-ext/tcga_data/ttypes"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/ttypes/", x))
+  ttype
+})
+
+#CLINICAL
+clinical = parSapply(c1, list.files("d:/CloudStation/fitness-model-ext/tcga_data/clinical"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/clinical/", x))
+  return(clinical)
+})
+
+clinical %<>%
+  t() %>%
+  as.data.frame(stringsAsFactors = F) %>%
+  rownames_to_column(var = "SampleID") %>%
+  mutate_at(.vars = c("clinical_AGE", "clinical_OS", "clinical_OS.time", "clinical_DSS", "clinical_DSS.time", "clinical_DFI", "clinical_DFI.time", "clinical_PFI", "clinical_PFI.time"), .funs = as.numeric) %>%
+  select(SampleID, clinical_AGE, clinical_GENDER, clinical_OS, clinical_OS.time, clinical_DSS, clinical_DSS.time, clinical_DFI, clinical_DFI.time, clinical_PFI, clinical_PFI.time, clinical_HISTORY_NEOADJUVANT_TRTYN)
+
+#Load LOH data
+cna_data = parSapply(c1, list.files("d:/CloudStation/fitness-model-ext/tcga_data/cna"), function(x) {
+  load(paste0("d:/CloudStation/fitness-model-ext/tcga_data/cna/", x))
+  return(cna[c("HLA-A", "HLA-B", "HLA-C", "B2M")])
+})
+
+cna_data %<>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "SampleID") %>%
+  rename(loh_a = 'HLA-A', loh_b = 'HLA-B', loh_c = 'HLA-C', loh_b2m = 'B2M') %>%
+  mutate(loh = ifelse(loh_a != 0 | loh_b != 0 | loh_c != 0 | loh_b2m != 0, TRUE, FALSE))
+
+stopCluster(c1)
+rm(c1, no_cores)
+
+pat_char = cbind(clinical, loh = cna_data[match(clinical$SampleID, cna_data$SampleID),"loh"])
+pat_char = cbind(pat_char, mutcnt = mutcnt[match(pat_char$SampleID, names(mutcnt))])
+pat_char = cbind(pat_char, tumortype = tumortype[match(pat_char$SampleID, names(tumortype))])
+save(pat_char, file = paste0(ext_folder1,"05out/pat_char"))
+```
+
+##Ratio of neononamers with low TCEM frequency (<4), low TCEM expression and low TCEM thymoproteasomal score
+cutoff: 33% - 0.203075, 66% - 1.095007
+cutoff: 25%: 0.914470
+
+```{r}
+load(paste0(ext_folder1, "objects/driver_mutations"))
+load(paste0(ext_folder1, "objects/pentamerfreq_tcem"))
+load(paste0(ext_folder1, "objects/exprmeds"))
+load(paste0(ext_folder1, "objects/thymomeds"))
+
+ids = list.files(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/"))
+
+load(paste0(ext_folder1, "tcem_mutated_nonamers/", ids[1]))
+vals = sapply(names(tmn_list[3:10]), function(x) paste0(strsplit(x, "_")[[1]][1],strsplit(x, "_")[[1]][2]))
+rm(tmn_list)
+
+i=0
+pat_ratio = lapply(ids, function(x) {
+  i = i+1
+  .GlobalEnv$i = i
+  
+  load(paste0(ext_folder1, "tcem_mutated_nonamers/", x))
+  tmn_list = tmn_list[3:10]
+  
+  a = lapply(tmn_list, function(y) {
+    neo_tcem = list(neo = substr(y,4,8), neo_pass = substr(y,4,8)[!names(substr(y,4,8)) %fin% driver])
+    sapply(neo_tcem, function(z) {
+      tcemfreq = pentamerfreq_tcem[fmatch(z,names(pentamerfreq_tcem))]
+      nf = length(tcemfreq)
+      lf = sum(tcemfreq < 4) / nf
+      tcemexpr = exprmeds[fmatch(z,names(exprmeds))]
+      tcemexpr_fe = tcemexpr[!is.na(tcemexpr)]
+      ne = length(tcemexpr_fe)
+      le = sum(tcemexpr_fe < 0.203075) / ne
+      tcemthymo = thymomeds[fmatch(z,names(thymomeds))]
+      tcemthymo_ft = tcemthymo[!is.na(tcemthymo)]
+      nt = length(tcemthymo_ft)
+      lt = sum(tcemthymo_ft < 0.914470) / nt
+      #combinations - 2
+      tcemfreq_fe = tcemfreq[!is.na(tcemexpr)]
+      lfle = sum(tcemfreq_fe < 4 & tcemexpr_fe < 0.203075) / ne
+      tcemfreq_ft = tcemfreq[!is.na(tcemthymo)]
+      lflt = sum(tcemfreq_ft < 4 & tcemthymo_ft < 0.914470) / nt
+      tcemexpr_fet = tcemexpr[!is.na(tcemexpr)|!is.na(tcemthymo)]
+      tcemthymo_fet = tcemthymo[!is.na(tcemexpr)|!is.na(tcemthymo)]
+      net = length(tcemexpr_fet)
+      lelt = sum(tcemexpr_fet < 0.203075 & tcemthymo_fet < 0.914470) / net
+      #combination - 3
+      tcemfreq_fet = tcemfreq[!is.na(tcemexpr)|!is.na(tcemthymo)]
+      lflelt = sum(tcemfreq_fet < 4 & tcemexpr_fet < 0.203075 & tcemthymo_fet < 0.914470) / net
+      
+      ratios = c(nf, ne, nt, net, lf, le, lt, lfle, lflt, lelt, lflelt) #vars*
+      ratios
+    })
+  })
+  do.call(rbind,a)
+})
+pat_ratio[[1]] #88*2 value for each patient - 8 binding type, 11 variable (vars*)
+
+pat_ratio = do.call(rbind, pat_ratio)
+pat_ratio = as.data.frame(pat_ratio)
+
+pat_ratio = cbind.data.frame(prop = c("nf", "ne", "nt", "net", "lf", "le", "lt", "lfle", "lflt", "lelt", "lflelt"), pat_ratio)
+pat_ratio = cbind.data.frame(binding_type = rep(vals, each = 11), pat_ratio)
+pat_ratio = cbind(SampleId = rep(ids, each = 88), pat_ratio)
+
+pat_ratio = gather(pat_ratio, key = "pepsource", value = "value", 4:5)
+pat_ratio = pivot_wider(pat_ratio, id_cols = SampleId, names_from = c(binding_type, prop, pepsource), names_sep = "_", values_from = "value")
+colnames(pat_ratio) = gsub("_neo", "", colnames(pat_ratio))
+pat_ratio[,2:ncol(pat_ratio)] = apply(pat_ratio[,2:ncol(pat_ratio)], 2, function(x) ifelse(is.nan(x),NA,x))
+
+save(pat_ratio, file = paste0(ext_folder1,"05out/pat_ratio"))
+```
+
+##Cohort
+
+```{r}
+load(paste0(ext_folder1,"05out/pat_ratio"))
+load(paste0(ext_folder1,"05out/pat_char"))
+
+cohort = cbind.data.frame(pat_ratio, pat_char[match(pat_ratio$SampleId, pat_char$SampleID),2:ncol(pat_char)])
+cohort$clinical_GENDER = factor(cohort$clinical_GENDER, levels = c("Male", "Female"))
+
+save(cohort, file = paste0(ext_folder1,"05out/cohort_tcga"))
+```
+
+#Objects for survival analysis
+
+```{r}
+load(paste0(ext_folder1,"05out/cohort_tcga"))
+
+cohort %>% 
+  dplyr::group_by(tumortype, clinical_GENDER) %>% dplyr::summarise(n = dplyr::n()) %>% View()
+
+freq_tumors = names(table(cohort$tumortype))[table(cohort$tumortype) > 30]
+
+tcemvars = sort(c(grep("_lf", colnames(cohort), value = T), grep("_le", colnames(cohort), value = T), grep("_lt", colnames(cohort), value = T))) #all vars
+
+tcemvarsgroup = sapply(tcemvars, function(x) strsplit(x, "_")[[1]][2])
+tcemvars = c(tcemvars[tcemvarsgroup == "lf"],tcemvars[tcemvarsgroup == "le"],tcemvars[tcemvarsgroup == "lt"],
+  tcemvars[tcemvarsgroup == "lfle"], tcemvars[tcemvarsgroup == "lflt"], tcemvars[tcemvarsgroup == "lelt"],
+  tcemvars[tcemvarsgroup == "lflelt"])
+tcemvarsgroup = tcemvarsgroup[tcemvars]
+
+res = expand.grid(tumor = c("all", freq_tumors), survival.type = c("os", "dss", "dfi", "pfi"), tcemv = tcemvars, tcemv.cutpoint = c(0.05,seq(0.1,0.6,0.1)), tcemv_filter = c("no", "yes"), stringsAsFactors = F)
+
+res_ftest = res
+
+res %<>%
+  mutate(m34n = NA, m3coef = NA, m3p = NA, m3warning = NA,
+         m4lown = NA, m4highn = NA, m4coef = NA, m4p = NA, m4warning = NA)
+
+res_ftest %<>%
+  mutate(m3p = NA, m3globalp = NA, m3warning = NA, m4p = NA, m4globalp = NA, m4warning = NA)
+```
+
+#Survival analysis
+
+```{r}
+library(dplyr)
+#cohort %<>% filter(clinical_HISTORY_NEOADJUVANT_TRTYN == "No")
+
+for(i in 1:nrow(res)) {
+  tryCatch({  
+    print(i)
+    temptcemvar = res$tcemv[i]
+    tempbindingtype = strsplit(temptcemvar, "_")[[1]][1]
+    if(grepl("_lflelt", temptcemvar) | grepl("_lelt", temptcemvar)) {tempcountvar = "net"} else if(grepl("_lflt", temptcemvar) | grepl("_lt", temptcemvar)) {tempcountvar = "nt"} else if(grepl("_lfle", temptcemvar) | grepl("_le", temptcemvar)) {tempcountvar = "ne"} else {tempcountvar = "nf"}
+    tempcountvar = paste(tempbindingtype, tempcountvar, sep = "_")
+    cohort_f = cohort %>% 
+      rename(countvar = tempcountvar, tcemvar = temptcemvar) %>% 
+      filter(!is.na(tcemvar))
+    #Select tumor
+    if(res$tumor[i] != "all") cohort_f %<>% filter(tumortype == res$tumor[i])
+    if(nrow(cohort_f) < 30) next()
+    #Set survival time
+    if(res$survival.type[i] == "os") {
+      cohort_f %<>% rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+    } else if(res$survival.type[i] == "dss") {
+      cohort_f %<>% rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+    } else if(res$survival.type[i] == "dfi") {
+      cohort_f %<>% rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+    } else if(res$survival.type[i] == "pfi") {
+      cohort_f %<>% rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+    }
+    #select tcemvars
+    cohort_f %<>% 
+      select(clinical_AGE, clinical_GENDER, loh, mutcnt, countvar, tcemvar, OS_Event, OS_Time)
+    #filter neopep count connected to tcemvar
+    if(res$tcemv_filter[i] == "yes") cohort_f %<>%  filter(countvar >= 10) #legalabb 10 neopeptid legyen
+    if(nrow(cohort_f) < 30) next()
+    #Create TCEM freq group
+    cohort_f$tcemvargroup = cut(x = cohort_f$tcemvar, breaks = c(0,res$tcemv.cutpoint[i],1), include.lowest = T, labels = F, right = F)
+    cohort_f %<>% na.omit()
+    if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
+    res$m34n[i] = nrow(cohort_f)
+    if(nrow(cohort_f) < 30) next()
+    #FILTER 3.
+    if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
+    #Differentiate gender-associated tumors
+    if(res$tumor[i] %in% c("cesc", "ov", "prad", "ucec", "ucs")) {
+      m3 = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f)
+      res$m3coef[i] = as.matrix(coef(summary(m3)))["tcemvar","coef"]
+      res$m3p[i] = as.matrix(coef(summary(m3)))["tcemvar","Pr(>|z|)"]
+      res$m3warning[i] = has_warning(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f))
+      ftestm3 = cox.zph(m3)
+      res_ftest$m3p[i] = ftestm3$table["tcemvar","p"]
+      res_ftest$m3globalp[i] = ftestm3$table["GLOBAL","p"]
+      res_ftest$m3warning[i] = has_warning(cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f)))
+      m4 = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f)
+      res$m4lown[i] = table(cohort_f$tcemvargroup)["1"]
+      res$m4highn[i] = table(cohort_f$tcemvargroup)["2"]
+      res$m4coef[i] = as.matrix(coef(summary(m4)))["tcemvargroup","coef"]
+      res$m4p[i] = as.matrix(coef(summary(m4)))["tcemvargroup","Pr(>|z|)"]
+      res$m4warning[i] = has_warning(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f))
+      ftestm4 = cox.zph(m4)
+      res_ftest$m4p[i] = ftestm4$table["tcemvargroup","p"]
+      res_ftest$m4globalp[i] = ftestm4$table["GLOBAL","p"]
+      res_ftest$m4warning[i] = has_warning(cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f)))
+    } else {
+      m3 = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f)
+      res$m3coef[i] = as.matrix(coef(summary(m3)))["tcemvar","coef"]
+      res$m3p[i] = as.matrix(coef(summary(m3)))["tcemvar","Pr(>|z|)"]
+      res$m3warning[i] = has_warning(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f))
+      ftestm3 = cox.zph(m3)
+      res_ftest$m3p[i] = ftestm3$table["tcemvar","p"]
+      res_ftest$m3globalp[i] = ftestm3$table["GLOBAL","p"]
+      res_ftest$m3warning[i] = has_warning(cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f)))
+      m4 = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f)
+      res$m4lown[i] = table(cohort_f$tcemvargroup)["1"]
+      res$m4highn[i] = table(cohort_f$tcemvargroup)["2"]
+      res$m4coef[i] = as.matrix(coef(summary(m4)))["tcemvargroup","coef"]
+      res$m4p[i] = as.matrix(coef(summary(m4)))["tcemvargroup","Pr(>|z|)"]
+      res$m4warning[i] = has_warning(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f))
+      ftestm4 = cox.zph(m4)
+      res_ftest$m4p[i] = ftestm4$table["tcemvargroup","p"]
+      res_ftest$m4globalp[i] = ftestm4$table["GLOBAL","p"]
+      res_ftest$m4warning[i] = has_warning(cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f)))
+    }
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+save(res, res_ftest, file = paste0(ext_folder1,"05out/survival_01"))
+beep(sound = "ping")
+```
+
+#Analyse results
+##Effect of high ratio - summary
+Negative effect
+
+```{r}
+load(paste0(ext_folder1,"05out/survival_01"))
+
+table(res$m3coef[res$m3p<0.05]>0)
+table(res$m4coef[res$m4p<0.05]>0)
+
+table(res$m3coef[res$m3p<0.05 & res$m34n>100]>0)
+table(res$m4coef[res$m4p<0.05 & res$m34n>100]>0)
+
+table(res$m3coef[res$m3p<0.05 & res$m34n>100 & res$tcemv_filter == "yes"]>0)
+table(res$m4coef[res$m4p<0.05 & res$m34n>100 & res$tcemv_filter == "yes"]>0)
+```
+
+##Correlation between variables and mutational burden
+
+```{r}
+load(paste0(ext_folder1,"05out/cohort_tcga"))
+load(paste0(ext_folder1,"05out/survival_01"))
+
+vals = unique(res$tcemv)
+valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
+vals = c(vals[valsgroup == "lf"],vals[valsgroup == "le"],vals[valsgroup == "lt"],
+  vals[valsgroup == "lfle"], vals[valsgroup == "lflt"], vals[valsgroup == "lelt"],
+  vals[valsgroup == "lflelt"])
+rm(valsgroup)
+
+cormat <- cbind(rho = sapply(vals, function(x) cor.test(cohort$mutcnt, cohort[,x], method = "spearman")$estimate),
+                p.value = sapply(vals, function(x) cor.test(cohort$mutcnt, cohort[,x], method = "spearman")$p.value))
+rownames(cormat) = vals
+
+rm(cohort, res, res_ftest, vals)
+```
+
+
+##Effect - coefs with significant cox model
+
+```{r}
+load(paste0(ext_folder1,"05out/survival_01"))
+
+vals = unique(res$tcemv)
+valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
+vals = c(vals[valsgroup == "lf"],vals[valsgroup == "le"],vals[valsgroup == "lt"],
+  vals[valsgroup == "lfle"], vals[valsgroup == "lflt"], vals[valsgroup == "lelt"],
+  vals[valsgroup == "lflelt"])
+valsgroup = valsgroup[vals]
+
+df_for_heatmap = expand.grid(surv_type = sort(unique(res$survival.type)), model = c("m3","m4"), stringsAsFactors = F)
+
+for(i in 1:nrow(df_for_heatmap)) {
+  tempres = res
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "p"),colnames(tempres))] = "pvalue"
+  if(df_for_heatmap$model[i] == "m3") {
+    m = tempres %>% 
+      dplyr::filter(pvalue<.05, 
+                    survival.type == df_for_heatmap$surv_type[i]) %>% 
+      dplyr::mutate(effect = ifelse(coef > 0, "im", "rm")) %>% #increases mortality / reduces mortality
+      dplyr::group_by(tumor, tcemv, effect) %>% 
+      dplyr::summarise(n = dplyr::n()) %>% 
+      transform(tcemv = factor(tcemv, levels = vals)) %>% 
+      dplyr::arrange(tcemv) %>% 
+      pivot_wider(id_cols = c(tcemv, tumor), names_from = effect, values_from = "n")
+  } else {
+    m = tempres %>% 
+      dplyr::filter(pvalue<.05,m4highn>10, 
+                    survival.type == df_for_heatmap$surv_type[i]) %>% 
+      dplyr::mutate(effect = ifelse(coef > 0, "im", "rm")) %>% #increases mortality / reduces mortality
+      dplyr::group_by(tumor, tcemv, effect) %>% 
+      dplyr::summarise(n = dplyr::n()) %>% 
+      transform(tcemv = factor(tcemv, levels = vals)) %>% 
+      dplyr::arrange(tcemv) %>% 
+      pivot_wider(id_cols = c(tcemv, tumor), names_from = effect, values_from = "n")
+  }
+  m[is.na(m)] = 0
+  m$dif = m$im - m$rm #ahol nagy, ott tobb az "increases mortality" - ez a jo nekunk
+  m %<>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "dif") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  names(sort(apply(m,1,function(z) sum(z>0)),decreasing = T)[sort(apply(m,1,function(z) sum(z>0)),decreasing = T)>4])
+  uniquevalues = unique(unlist(apply(m,1,function(z) unique(z)),use.names = F))
+  uniquevalues = uniquevalues[!is.na(uniquevalues)]
+  min.m = min(uniquevalues)
+  max.m = max(uniquevalues)
+  m[is.na(m)] = max.m*2
+  
+  ha = rowAnnotation(vg = valsgroup[rownames(m)], 
+                         col = list(vg = c("lf" = "#1B9E77", "le" = "#D95F02", "lt" = "#7570B3", "lfle" = "#E7298A", "lflt" = "#66A61E", "lelt" = "#E6AB02", "lflelt" = "#A6761D")))
+  tiff(paste0(ext_folder1, "05out/heatmaps/effect_", 
+              df_for_heatmap$surv_type[i], "_", 
+              df_for_heatmap$model[i], ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = colorRamp2(c(min.m, 0, max.m, max(m)), c("green", "white", "red", "grey")),
+          right_annotation = ha,
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Effect",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+bestvars <- apply(df_for_heatmap,1,function(x) {
+  tempres = res
+  colnames(tempres)[match(paste0(x[2], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(x[2], "p"),colnames(tempres))] = "pvalue"
+  if(x[2] == "m3") {
+    m = tempres %>% 
+      dplyr::filter(pvalue<.05, 
+                    survival.type == x[1]) %>% 
+      dplyr::mutate(effect = ifelse(coef > 0, "im", "rm")) %>% #increases mortality / reduces mortality
+      dplyr::group_by(tumor, tcemv, effect) %>% 
+      dplyr::summarise(n = dplyr::n()) %>% 
+      transform(tcemv = factor(tcemv, levels = vals)) %>% 
+      dplyr::arrange(tcemv) %>% 
+      pivot_wider(id_cols = c(tcemv, tumor), names_from = effect, values_from = "n")
+  } else {
+    m = tempres %>% 
+      dplyr::filter(pvalue<.05,m4highn>10, 
+                    survival.type == x[1]) %>% 
+      dplyr::mutate(effect = ifelse(coef > 0, "im", "rm")) %>% #increases mortality / reduces mortality
+      dplyr::group_by(tumor, tcemv, effect) %>% 
+      dplyr::summarise(n = dplyr::n()) %>% 
+      transform(tcemv = factor(tcemv, levels = vals)) %>% 
+      dplyr::arrange(tcemv) %>% 
+      pivot_wider(id_cols = c(tcemv, tumor), names_from = effect, values_from = "n")
+  }
+  m[is.na(m)] = 0
+  m$dif = m$im - m$rm #ahol nagy, ott tobb az "increases mortality" - ez a jo nekunk
+  m %<>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "dif") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  sort(apply(m,1,function(z) sum(z>0)),decreasing = T)[sort(apply(m,1,function(z) sum(z>0)),decreasing = T)>4]
+})
+
+sort(table(names(unlist(bestvars))),decreasing = T)
+
+
+
+```
+
+##Best variable, cutoff and survival type and PLOTS
+
+```{r}
+load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/cohort_tcga"))
+
+colnames(res_ftest)[6:11] = paste("ftest", colnames(res_ftest)[6:11], sep = "_")
+res = cbind(res, res_ftest[,6:11])
+rm(res_ftest)
+
+varpropsdf = expand.grid(surv_type = sort(unique(res$survival.type)),
+                     tcemvar = sort(unique(res$tcemv)),
+                     cp = sort(unique(res$tcemv.cutpoint)), 
+                     tcemvar_filter = c("yes", "no"), 
+                     stringsAsFactors = F)
+
+varpropsdf$l = apply(varpropsdf, 1, function(x) {
+  res %>% 
+    dplyr::filter(survival.type == x[1],
+                  tcemv==x[2],
+                  tcemv.cutpoint== as.numeric(x[3]),
+                  tcemv_filter == x[4],
+                  m4lown > 10,
+                  m4highn > 10,
+                  m4coef > 0, 
+                  m4p < .05) %>%
+    dplyr::pull(tumor) %>% 
+    unique() %>% 
+    length()
+})
+
+bestvarsdf_5 = varpropsdf[varpropsdf$l == 5,]
+
+bestvarsdf_5all = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(res), dimnames = list(NULL, colnames(res))))
+
+for(h in 1:nrow(bestvarsdf_5)) {
+  tempres = na.omit(res)
+  tempres = tempres[tempres$survival.type == bestvarsdf_5$surv_type[h] & 
+                      tempres$tcemv == bestvarsdf_5$tcemvar[h] &
+                      tempres$tcemv.cutpoint == bestvarsdf_5$cp[h] &
+                      tempres$tcemv_filter == bestvarsdf_5$tcemvar_filter[h] &
+                      tempres$m4coef > 0 &
+                      tempres$m4p < .05,]
+  bestvarsdf_5all = rbind(bestvarsdf_5all, tempres)
+}
+rm(tempres, h)
+
+
+fig_ggfvar <- list()
+fig_ggfvarg <- list()
+fig_ggsvarg <- list()
+
+for(h in 1:nrow(bestvarsdf_5all)) {
+  print(h)
+  temptcemvar = bestvarsdf_5all$tcemv[h]
+  cohort_f = cohort %>% 
+    dplyr::rename(tcemvar = temptcemvar) %>% 
+    dplyr::filter(!is.na(tcemvar))
+  if(bestvarsdf_5all$survival.type[h] == "os") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+  } else if(bestvarsdf_5all$survival.type[h] == "dss") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+  } else if(bestvarsdf_5all$survival.type[h] == "dfi") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+  } else if(bestvarsdf_5all$survival.type[h] == "pfi") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+  }
+  if(bestvarsdf_5all$tumor[h] != "all") cohort_f %<>% dplyr::filter(tumortype == bestvarsdf_5all$tumor[h])
+  cohort_f %<>% 
+    dplyr::select(clinical_AGE, clinical_GENDER, loh, mutcnt, tcemvar, OS_Event, OS_Time)
+  cohort_f$tcemvargroup = cut(x = cohort_f$tcemvar, breaks = c(0,bestvarsdf_5all$tcemv.cutpoint[h],1), include.lowest = T, labels = F, right = F)
+  
+  cohort_f %<>% dplyr::filter(!is.na(OS_Event),!is.na(OS_Time))
+  cohort_f1 = cohort_f %>%  dplyr::select(-tcemvar)
+  
+  fig_ggsvarg[[h]] <- ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f1), pval = TRUE, legend.title = bestvarsdf_5all$tcemv[h], surv.median.line = c("hv"), title = toupper(bestvarsdf_5all$tumor[h]), font.main = c(12, "bold"), ylab = bestvarsdf_5all$survival.type[h])
+  
+  cohort_f %<>% na.omit()
+  if(bestvarsdf_5all$tumor[h] %in% c("cesc", "ov", "prad", "ucec", "ucs")) cohort_f %<>%  dplyr::select(-clinical_GENDER)
+
+  cohort_f1 = cohort_f %>%  dplyr::select(-tcemvar)
+  fig_ggfvarg[[h]] <- ggforest(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f1), main = bestvarsdf_5all$tumor[h])
+  cohort_f2 = cohort_f %>%  dplyr::select(-tcemvargroup)
+  fig_ggfvar[[h]] <- ggforest(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f2), main = bestvarsdf_5all$tumor[h])
+}
+
+rm(h, temptcemvar, cohort_f, cohort_f1, cohort_f2)
+
+save(bestvarsdf_5, bestvarsdf_5all, fig_ggfvar, fig_ggfvarg, fig_ggsvarg, file = paste0(ext_folder1, "05out/bestvars_5"))
+
+for(h in 1:nrow(bestvarsdf_5)) {
+  dir.create(paste0(ext_folder1, "05out/bestvars_plots/", paste(bestvarsdf_5[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/"))
+  fig_ggfvar5 = do.call(grid.arrange,fig_ggfvar[(h*5-4):(h*5)])
+  ggsave(fig_ggfvar5, file = paste0(ext_folder1, "05out/bestvars_plots5/", paste(bestvarsdf_5[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggfvar.jpg"), width = 35, height = 20, units = "cm", dpi = "retina")
+  fig_ggfvarg5 = do.call(grid.arrange,fig_ggfvarg[(h*5-4):(h*5)])
+  ggsave(fig_ggfvarg5, file = paste0(ext_folder1, "05out/bestvars_plots5/", paste(bestvarsdf_5[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggfvarg.jpg"), width = 35, height = 20, units = "cm", dpi = "retina")
+  fig_ggsvarg5 = arrange_ggsurvplots(fig_ggsvarg[(h*5-4):(h*5)], ncol = 2, nrow = 3)
+  ggsave(fig_ggsvarg5, file = paste0(ext_folder1, "05out/bestvars_plots5/", paste(bestvarsdf_5[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggsvarg.jpg"), width = 25, height = 35, units = "cm", dpi = "retina")
+}
+
+load(paste0(ext_folder1, "05out/bestvars_5"))
+bestvarsdf_5all %>%
+  dplyr::filter(m3coef>0,m3p<.05) %>% 
+  dplyr::group_by(survival.type,tcemv,tcemv.cutpoint,tcemv_filter) %>% 
+  dplyr::summarise(n = dplyr::n()) -> out5
+
+
+###################################################################↨4
+bestvarsdf_4 = varpropsdf[varpropsdf$l == 4,]
+
+bestvarsdf_4all = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(res), dimnames = list(NULL, colnames(res))))
+
+for(h in 1:nrow(bestvarsdf_4)) {
+  tempres = na.omit(res)
+  tempres = tempres[tempres$survival.type == bestvarsdf_4$surv_type[h] & 
+                      tempres$tcemv == bestvarsdf_4$tcemvar[h] &
+                      tempres$tcemv.cutpoint == bestvarsdf_4$cp[h] &
+                      tempres$tcemv_filter == bestvarsdf_4$tcemvar_filter[h] &
+                      tempres$m4coef > 0 &
+                      tempres$m4p < .05,]
+  bestvarsdf_4all = rbind(bestvarsdf_4all, tempres)
+}
+rm(tempres, h)
+
+
+fig_ggfvar <- list()
+fig_ggfvarg <- list()
+fig_ggsvarg <- list()
+
+for(h in 1:nrow(bestvarsdf_4all)) {
+  print(h)
+  temptcemvar = bestvarsdf_4all$tcemv[h]
+  cohort_f = cohort %>% 
+    dplyr::rename(tcemvar = temptcemvar) %>% 
+    dplyr::filter(!is.na(tcemvar))
+  if(bestvarsdf_4all$survival.type[h] == "os") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+  } else if(bestvarsdf_4all$survival.type[h] == "dss") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+  } else if(bestvarsdf_4all$survival.type[h] == "dfi") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+  } else if(bestvarsdf_4all$survival.type[h] == "pfi") {
+    cohort_f %<>% dplyr::rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+  }
+  if(bestvarsdf_4all$tumor[h] != "all") cohort_f %<>% dplyr::filter(tumortype == bestvarsdf_4all$tumor[h])
+  cohort_f %<>% 
+    dplyr::select(clinical_AGE, clinical_GENDER, loh, mutcnt, tcemvar, OS_Event, OS_Time)
+  cohort_f$tcemvargroup = cut(x = cohort_f$tcemvar, breaks = c(0,bestvarsdf_4all$tcemv.cutpoint[h],1), include.lowest = T, labels = F, right = F)
+  
+  cohort_f %<>% dplyr::filter(!is.na(OS_Event),!is.na(OS_Time))
+  cohort_f1 = cohort_f %>%  dplyr::select(-tcemvar)
+  
+  fig_ggsvarg[[h]] <- ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f1), pval = TRUE, legend.title = bestvarsdf_4all$tcemv[h], surv.median.line = c("hv"), title = toupper(bestvarsdf_4all$tumor[h]), font.main = c(12, "bold"), ylab = bestvarsdf_4all$survival.type[h])
+  
+  cohort_f %<>% na.omit()
+  if(bestvarsdf_4all$tumor[h] %in% c("cesc", "ov", "prad", "ucec", "ucs")) cohort_f %<>%  dplyr::select(-clinical_GENDER)
+
+  cohort_f1 = cohort_f %>%  dplyr::select(-tcemvar)
+  fig_ggfvarg[[h]] <- ggforest(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f1), main = bestvarsdf_4all$tumor[h])
+  cohort_f2 = cohort_f %>%  dplyr::select(-tcemvargroup)
+  fig_ggfvar[[h]] <- ggforest(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f2), main = bestvarsdf_4all$tumor[h])
+}
+
+rm(h, temptcemvar, cohort_f, cohort_f1, cohort_f2)
+
+save(bestvarsdf_4, bestvarsdf_4all, fig_ggfvar, fig_ggfvarg, fig_ggsvarg, file = paste0(ext_folder1, "05out/bestvars_4"))
+
+for(h in 1:nrow(bestvarsdf_4)) {
+  dir.create(paste0(ext_folder1, "05out/bestvars_plots4/", paste(bestvarsdf_4[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/"))
+  fig_ggfvar5 = do.call(grid.arrange,fig_ggfvar[(h*4-3):(h*4)])
+  ggsave(fig_ggfvar5, file = paste0(ext_folder1, "05out/bestvars_plots4/", paste(bestvarsdf_4[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggfvar.jpg"), width = 35, height = 20, units = "cm", dpi = "retina")
+  fig_ggfvarg5 = do.call(grid.arrange,fig_ggfvarg[(h*4-3):(h*4)])
+  ggsave(fig_ggfvarg5, file = paste0(ext_folder1, "05out/bestvars_plots4/", paste(bestvarsdf_4[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggfvarg.jpg"), width = 35, height = 20, units = "cm", dpi = "retina")
+  fig_ggsvarg5 = arrange_ggsurvplots(fig_ggsvarg[(h*4-3):(h*4)], ncol = 2, nrow = 2)
+  ggsave(fig_ggsvarg5, file = paste0(ext_folder1, "05out/bestvars_plots4/", paste(bestvarsdf_4[h,c("tcemvar", "surv_type", "cp", "tcemvar_filter")], collapse = "_"), "/ggsvarg.jpg"), width = 25, height = 35, units = "cm", dpi = "retina")
+}
+
+load(paste0(ext_folder1, "05out/bestvars_4"))
+
+bestvarsdf_4all %>%
+  dplyr::filter(m3coef>0,m3p<.05) %>% 
+  dplyr::group_by(survival.type,tcemv,tcemv.cutpoint,tcemv_filter) %>% 
+  dplyr::summarise(n = dplyr::n()) -> out4
+
+out4 = cbind(out4, cormat[match(out4$tcemv, rownames(cormat)),1:2])
+```
+
+cox-model(cont.var) - cox-model(cat.var) - ggsurvplot log-rank test
+affweak_lelt - DSS - 0.05 - no (rho=0.29, p=3.473999e-155): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
+andweak_lelt - DSS - 0.05 - no (rho=0.29, p=7.985555e-160): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
+affweak_lelt - OS - 0.05 - no (rho=0.29, p=3.473999e-155): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
+affweak_lflt - OS - 0.10 - no (rho=0.23, p=1.383311e-102): ALL(-++) - ACC(-++) - KIRP(+++) - LGG(+++) - LIHC(+++)
+
+andweak_lflt_pass - DSS - 0.10 - no (rho=0.27, p=5.981003e-139): ALL(-++) - ACC(-++) - KIRP(+++) - LGG(+++) - STAD(-++)
+affweak_lfle_pass - OS - 0.05 - no (rho=0.24, p=2.879366e-118): ALL(-++) - ACC(+++) - BRCA(++-) - LUAD(-+-) - THCA(WARNING)
+andweak_lfle_pass - OS - 0.05 - no(rho=0.25, p=4.273507e-123): ALL(-++) - ACC(+++) - BRCA(++-) - LUAD(-+-) - THCA(WARNING)
+andweak_lflt_pass - OS - 0.10 - no(rho=0.27, p=5.981003e-139): ALL(-++) - ACC(-++) - KIRP(-++) - LGG(+++) - LIHC(+++)
+
+andweak_lelt - OS - 0.05 - no (rho=0.29, p=7.985555e-160): ALL(-++) - ACC(+++) - GBM(++-) - LGG(+++)
+andweak_lflt - OS - 0.10 - no (rho=0.23, p=2.150908e-107): ALL(-++) - KIRP(+++) - LGG(+++) - LIHC(+++)
+rpstr_lflelt - PFI - 0.05 - no (rho=0.40, p=4.948440e-308): ALL(-++) - COAD(+++) - GBM(++-) - LUSC(+++)
+
+
+
+##Survplot
+rpstr_lt: all: 47338, 33326, blca: 33452, stad: 144579
+
+```{r}
+load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/cohort_tcga"))
+
+
+i=9938
+temptcemvar = res$tcemv[i]
+tempbindingtype = strsplit(temptcemvar, "_")[[1]][1]
+if(grepl("_lflelt", temptcemvar) | grepl("_lelt", temptcemvar)) {tempcountvar = "net"} else if(grepl("_lflt", temptcemvar) | grepl("_lt", temptcemvar)) {tempcountvar = "nt"} else if(grepl("_lfle", temptcemvar) | grepl("_le", temptcemvar)) {tempcountvar = "ne"} else {tempcountvar = "nf"}
+tempcountvar = paste(tempbindingtype, tempcountvar, sep = "_")
+cohort_f = cohort %>% 
+  dplyr::rename(countvar = tempcountvar, tcemvar = temptcemvar) %>% 
+  dplyr::filter(!is.na(tcemvar))
+if(res$tumor[i] != "all") cohort_f %<>% dplyr::filter(tumortype == res$tumor[i])
+if(nrow(cohort_f) < 30) next()
+if(res$survival.type[i] == "os") {
+  cohort_f %<>% dplyr::rename(OS_Time = clinical_OS.time, OS_Event = clinical_OS)
+} else if(res$survival.type[i] == "dss") {
+  cohort_f %<>% dplyr::rename(OS_Time = clinical_DSS.time, OS_Event = clinical_DSS)
+} else if(res$survival.type[i] == "dfi") {
+  cohort_f %<>% dplyr::rename(OS_Time = clinical_DFI.time, OS_Event = clinical_DFI)
+} else if(res$survival.type[i] == "pfi") {
+  cohort_f %<>% dplyr::rename(OS_Time = clinical_PFI.time, OS_Event = clinical_PFI)
+}
+cohort_f %<>% 
+  dplyr::select(clinical_AGE, clinical_GENDER, loh, mutcnt, countvar, tcemvar, OS_Event, OS_Time)
+if(res$tcemv_filter[i] == "yes") cohort_f %<>%  dplyr::filter(countvar >= 10) #legalabb 10 neopeptid legyen
+if(nrow(cohort_f) < 30) next()
+cohort_f$tcemvargroup = cut(x = cohort_f$tcemvar, breaks = c(0,res$tcemv.cutpoint[i],1), include.lowest = T, labels = F, right = F)
+cohort_f %<>% na.omit()
+if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
+nrow(cohort_f)
+if(nrow(cohort_f) < 30) next()
+if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
+
+if(res$tumor[i] %in% c("cesc", "ov", "prad", "ucec", "ucs")) {
+  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f)
+  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f))
+  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f)
+  table(cohort_f$tcemvargroup)
+  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f))
+  ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:5]), sep = " ", collapse = " "), font.main = 8, risk.table = T)
+  ggforest(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f), data = cohort_f)
+} else {
+  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f)
+  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f))
+  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f)
+  table(cohort_f$tcemvargroup)
+  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f))
+  ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:5]), sep = " ", collapse = " "), font.main = 8, risk.table = T)
+  ggforest(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f), data = cohort_f)
+}
+
+rm(temptcemvar, tempbindingtype, tempcountvar, )
+```
+
+## Positive coef heatmaps
+
+```{r}
+load(paste0(ext_folder1,"04out/survival_01"))
+
+vals = unique(res$tcemv)
+valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
+vals = c(vals[valsgroup == "lf"],vals[valsgroup == "le"],vals[valsgroup == "lt"],
+  vals[valsgroup == "lfle"], vals[valsgroup == "lflt"], vals[valsgroup == "lelt"],
+  vals[valsgroup == "lflelt"])
+rm(valsgroup)
+
+surv_types = sort(unique(res$survival.type))
+
+df_for_heatmap = expand.grid(surv_type = surv_types, model = c("m1","m2","m3","m4"), im.tumor = c("all", "im_tumor"), stringsAsFactors = F)
+
+for(i in 1:nrow(df_for_heatmap)) {
+  tempres = res
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(coef>0, 
+           pvalue<.05, 
+           im.tumor.filt == df_for_heatmap$im.tumor[i],
+           loh=="all",
+           survival.type == df_for_heatmap$surv_type[i]) %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              df_for_heatmap$surv_type[i], "_", 
+              df_for_heatmap$model[i], "_",
+              df_for_heatmap$im.tumor[i], ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = viridis(20),
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Number of significant results",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+
+#all M1, M2, M3, M4
+for(i in c("m1","m2","m3","m4")) {
+  tempres = res
+  colnames(tempres)[match(paste0(i, "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(i, "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(coef>0, 
+           pvalue<.05, 
+           loh=="all") %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              i, ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = viridis(20),
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Number of significant results",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+#all DFI, DSS, OS, PF
+for(i in surv_types) {
+  tempres = res
+  m = tempres %>% 
+    dplyr::filter((m1coef>0 & m1p<.05)|(m2coef>0 & m2p<.05)|(m3coef>0 & m3p<.05)|(m4coef>0 & m4p<.05)) %>% 
+    dplyr::filter(loh=="all", survival.type == i) %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              i, ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = viridis(20),
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Number of significant results",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+
+```
+
+

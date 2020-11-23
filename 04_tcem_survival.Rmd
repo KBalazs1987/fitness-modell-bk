@@ -9,7 +9,7 @@ output: html_document
 ```{r setup, include=FALSE}
 setwd("d:/CloudStation/mygit/fitness-modell-bk/")
 ext_folder1 = "d:/CloudStation/fitness-model-ext/"
-packs <- c("dplyr", "magrittr", "tibble", "fastmatch", "ggplot2", "stringr", "forcats", "stringi", "Rfast", "tidyr", "parallel", "survival", "survminer", "testit", "beepr", "complexHeatmap", "viridis")
+packs <- c("magrittr", "tibble", "fastmatch", "ggplot2", "stringr", "forcats", "stringi", "Rfast", "tidyr", "parallel", "survival", "survminer", "testit", "beepr", "ComplexHeatmap", "RColorBrewer")
 invisible(lapply(packs, require, character.only = TRUE))
 rm(packs)
 # '%nin%' = Negate('%in%')
@@ -295,7 +295,162 @@ save(res, res_ftest, file = paste0(ext_folder1,"04out/survival_01"))
 beep(sound = "ping")
 ```
 
-#Analyse results - heatmaps
+#Kieg - tcemv.cutpoint = 0.05, 0.1
+
+
+
+#Analyse results
+##Effect of high ratio - summary
+osszesegeben inkabb negativ hatasa van, ha nagy barmilyen TCEMvar eseten az arány
+
+```{r}
+load(paste0(ext_folder1,"04out/survival_01"))
+
+table(res$m1coef[res$m1p<0.05]>0)
+table(res$m2coef[res$m2p<0.05]>0)
+table(res$m3coef[res$m3p<0.05]>0)
+table(res$m4coef[res$m4p<0.05]>0)
+
+table(res$m1coef[res$m1p<0.05 & res$m12n>100]>0)
+table(res$m2coef[res$m2p<0.05 & res$m12n>100]>0)
+table(res$m3coef[res$m3p<0.05 & res$m34n>100]>0)
+table(res$m4coef[res$m4p<0.05 & res$m34n>100]>0)
+
+table(res$m1coef[res$m1p<0.05 & res$m12n>100 & res$tcemv_filter == "yes"]>0)
+table(res$m2coef[res$m2p<0.05 & res$m12n>100 & res$tcemv_filter == "yes"]>0)
+table(res$m3coef[res$m3p<0.05 & res$m34n>100 & res$tcemv_filter == "yes"]>0)
+table(res$m4coef[res$m4p<0.05 & res$m34n>100 & res$tcemv_filter == "yes"]>0)
+
+```
+
+##Mely tumoroknal van egyertelmu hatas - tumoronkent a szignifikans p melletti koefficiensek
+
+```{r}
+load(paste0(ext_folder1,"04out/survival_01"))
+
+vals = unique(res$tcemv)
+valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
+vals = c(vals[valsgroup == "lf"],vals[valsgroup == "le"],vals[valsgroup == "lt"],
+  vals[valsgroup == "lfle"], vals[valsgroup == "lflt"], vals[valsgroup == "lelt"],
+  vals[valsgroup == "lflelt"])
+valsgroup = valsgroup[vals]
+
+surv_types = sort(unique(res$survival.type))
+
+df_for_heatmap = expand.grid(surv_type = surv_types, model = c("m1","m2","m3","m4"), im.tumor = c("all", "im_tumor"), stringsAsFactors = F)
+
+#brewer.pal(7,"Dark2")
+
+for(i in 1:nrow(df_for_heatmap)) {
+  tempres = res
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(pvalue<.05, 
+           im.tumor.filt == df_for_heatmap$im.tumor[i],
+           loh=="all",
+           survival.type == df_for_heatmap$surv_type[i]) %>% 
+    dplyr::mutate(effect = ifelse(coef > 0, "im", "rm")) %>% #increases mortality / reduces mortality
+    dplyr::group_by(tumor, tcemv, effect) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = c(tcemv, tumor), names_from = effect, values_from = "n") 
+  m[is.na(m)] = 0
+  m$dif = m$im - m$rm #ahol nagy, ott tobb az "increases mortality" - ez a jo nekunk
+  m %<>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "dif") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  ha = rowAnnotation(vg = valsgroup[rownames(m)], 
+                         col = list(vg = c("lf" = "#1B9E77", "le" = "#D95F02", "lt" = "#7570B3", "lfle" = "#E7298A", "lflt" = "#66A61E", "lelt" = "#E6AB02", "lflelt" = "#A6761D")))
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/effect_", 
+              df_for_heatmap$surv_type[i], "_", 
+              df_for_heatmap$model[i], "_",
+              df_for_heatmap$im.tumor[i], ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = brewer.pal(10, "RdBu"),
+          right_annotation = ha,
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Effect",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+```
+
+#melyik valtozo lehet a legjobb
+
+```{r}
+load(paste0(ext_folder1,"04out/survival_01"))
+vals = unique(res$tcemv)
+valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
+vals = c(vals[valsgroup == "lf"],vals[valsgroup == "le"],vals[valsgroup == "lt"],
+  vals[valsgroup == "lfle"], vals[valsgroup == "lflt"], vals[valsgroup == "lelt"],
+  vals[valsgroup == "lflelt"])
+rm(valsgroup)
+
+surv_types = sort(unique(res$survival.type))
+
+tempdf = expand.grid(surv_type = surv_types, model = c("m1","m2","m3","m4"), stringsAsFactors = F)
+
+varfreqs = apply(tempdf, 1, function(x) {
+  tempres = res
+  colnames(tempres)[match(paste0(x[2], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(x[2], "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(coef>0,pvalue<.05,
+           survival.type == x[1]) %>% 
+    dplyr::group_by(tcemv,tumor) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  out = apply(m,1,function(y) sum(y>0))[vals]
+  names(out) = vals
+  out
+})
+colnames(varfreqs) = apply(tempdf,1,function(x) paste(x[1],x[2],sep = "_"))
+varfreqs[is.na(varfreqs)] = 0
+
+varfreqs = cbind(varfreqs, rmedian = rowMedians(varfreqs), rmean = rowMeans(varfreqs), rsum = rowSums(varfreqs))
+varfreqs = cbind(varfreqs, rmedian34 = rowMedians(varfreqs[,9:16]), rmean34 = rowMeans(varfreqs[,9:16]), rsum34 = rowSums(varfreqs[,9:16]))
+
+selvars = unique(c(names(sort(varfreqs[,"rmedian34"], decreasing = T))[1:10],
+  names(sort(varfreqs[,"rmean34"], decreasing = T))[1:10],
+  names(sort(varfreqs[,"rsum34"], decreasing = T))[1:10]))
+
+View(res[res$tcemv == selvars[1] & ((res$m3coef>0 & res$m3p < .05)|(res$m4coef>0 & res$m4p < .05)),])
+res %>% 
+  dplyr::filter(tcemv == selvars[1]) %>% 
+  dplyr::filter((m3coef>0 & m3p < .05) | (m4coef>0 & m4p < .05)) %>% View()
+
+sort(apply(varfreqsmtx[,1:4], 1, function(x) mean(x,na.rm=T)), decreasing = T)
+sort(apply(varfreqsmtx[,5:8], 1, function(x) mean(x,na.rm=T)), decreasing = T)
+sort(apply(varfreqsmtx[,9:12], 1, function(x) mean(x,na.rm=T)), decreasing = T)
+sort(apply(varfreqsmtx[,13:16], 1, function(x) mean(x,na.rm=T)), decreasing = T)
+sort(apply(varfreqsmtx, 1, function(x) mean(x,na.rm=T)), decreasing = T)
+```
+
+korrelacio mut szam es a valtozok kozott
+
+
+
+## positive coef heatmaps
 
 ```{r}
 load(paste0(ext_folder1,"04out/survival_01"))
@@ -311,21 +466,29 @@ surv_types = sort(unique(res$survival.type))
 
 df_for_heatmap = expand.grid(surv_type = surv_types, model = c("m1","m2","m3","m4"), im.tumor = c("all", "im_tumor"), stringsAsFactors = F)
 
-
-for(i in nrow(df_for_heatmap)) {
-  re
-  m = res %>% 
-    filter(m1coef>0, m1p<.05, im.tumor.filt=="all",loh=="all",survival.type==i) %>% 
-    group_by(tumor, tcemv) %>% 
-    summarise(n = n()) %>% 
+for(i in 1:nrow(df_for_heatmap)) {
+  tempres = res
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(df_for_heatmap$model[i], "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(coef>0, 
+           pvalue<.05, 
+           im.tumor.filt == df_for_heatmap$im.tumor[i],
+           loh=="all",
+           survival.type == df_for_heatmap$surv_type[i]) %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
     transform(tcemv = factor(tcemv, levels = vals)) %>% 
-    arrange(tcemv) %>% 
+    dplyr::arrange(tcemv) %>% 
     pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
     column_to_rownames("tcemv") %>% 
     as.matrix()
   m[is.na(m)] = 0
-  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps", i), units="mm", width = 400, height = 230, res = 300)
-  Heatmap(matrix = m,
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              df_for_heatmap$surv_type[i], "_", 
+              df_for_heatmap$model[i], "_",
+              df_for_heatmap$im.tumor[i], ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
           col = viridis(20),
           row_title = "TCEM variable",
           column_title = "Tumor",
@@ -341,10 +504,86 @@ for(i in nrow(df_for_heatmap)) {
                                       legend_height = unit(5, "cm"),
                                       grid_width = unit(0.5, "cm"), 
                                       labels_gp = gpar(fontsize = 12)))
-  draw(fig4b_ch)
+  draw(fig)
   dev.off()
-  
 }
+
+
+#all M1, M2, M3, M4
+for(i in c("m1","m2","m3","m4")) {
+  tempres = res
+  colnames(tempres)[match(paste0(i, "coef"),colnames(tempres))] = "coef"
+  colnames(tempres)[match(paste0(i, "p"),colnames(tempres))] = "pvalue"
+  m = tempres %>% 
+    dplyr::filter(coef>0, 
+           pvalue<.05, 
+           loh=="all") %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              i, ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = viridis(20),
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Number of significant results",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
+#all DFI, DSS, OS, PF
+for(i in surv_types) {
+  tempres = res
+  m = tempres %>% 
+    dplyr::filter((m1coef>0 & m1p<.05)|(m2coef>0 & m2p<.05)|(m3coef>0 & m3p<.05)|(m4coef>0 & m4p<.05)) %>% 
+    dplyr::filter(loh=="all", survival.type == i) %>% 
+    dplyr::group_by(tumor, tcemv) %>% 
+    dplyr::summarise(n = dplyr::n()) %>% 
+    transform(tcemv = factor(tcemv, levels = vals)) %>% 
+    dplyr::arrange(tcemv) %>% 
+    pivot_wider(id_cols = tcemv, names_from = tumor, values_from = "n") %>% 
+    column_to_rownames("tcemv") %>% 
+    as.matrix()
+  m[is.na(m)] = 0
+  tiff(paste0("D:/CloudStation/fitness-model-ext/04out/heatmaps/", 
+              i, ".jpg"), units="mm", width = 400, height = 250, res = 300)
+  fig <- Heatmap(matrix = m,
+          col = viridis(20),
+          row_title = "TCEM variable",
+          column_title = "Tumor",
+          rect_gp = gpar(col = "grey60", lwd = 1),
+          cluster_columns = T, 
+          cluster_rows = F,
+          row_names_side = "left",
+          row_names_gp = gpar(fontsize = 9),
+          show_column_names = T,
+          heatmap_legend_param = list(title = "Number of significant results",
+                                      title_position = "leftcenter-rot",
+                                      title_gp = gpar(col = "black", fontsize = 12, fontface = "bold"),
+                                      legend_height = unit(5, "cm"),
+                                      grid_width = unit(0.5, "cm"), 
+                                      labels_gp = gpar(fontsize = 12)))
+  draw(fig)
+  dev.off()
+}
+
 
 ```
 
@@ -357,7 +596,9 @@ load(paste0(ext_folder1,"04out/cohort_tcga"))
 res %>% filter(m1coef>0, m1p<.05) %>% View()
 
 
-i=41355
+
+#41355, 29761
+i=29761
 temptcemvar = res$tcemv[i]
 tempbindingtype = strsplit(temptcemvar, "_")[[1]][1]
 if(grepl("_lflelt", temptcemvar) | grepl("_lelt", temptcemvar)) {tempcountvar = "net"} else if(grepl("_lflt", temptcemvar) | grepl("_lt", temptcemvar)) {tempcountvar = "nt"} else if(grepl("_lfle", temptcemvar) | grepl("_le", temptcemvar)) {tempcountvar = "ne"} else {tempcountvar = "nf"}
