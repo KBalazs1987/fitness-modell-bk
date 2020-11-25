@@ -235,6 +235,7 @@ for(i in 1:nrow(res)) {
     #FILTER 3.
     if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
     #Differentiate gender-associated tumors
+    
     if(res$tumor[i] %in% c("cesc", "ov", "prad", "ucec", "ucs")) {
       m3 = coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f)
       res$m3coef[i] = as.matrix(coef(summary(m3)))["tcemvar","coef"]
@@ -277,7 +278,10 @@ for(i in 1:nrow(res)) {
   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
-save(res, res_ftest, file = paste0(ext_folder1,"05out/survival_01"))
+colnames(res_ftest)[6:11] = paste("ftest", colnames(res_ftest)[6:11], sep = "_")
+res = cbind(res, res_ftest[,6:11])
+
+save(res, file = paste0(ext_folder1,"05out/survival"))
 beep(sound = "ping")
 ```
 
@@ -286,7 +290,7 @@ beep(sound = "ping")
 Negative effect
 
 ```{r}
-load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/survival"))
 
 table(res$m3coef[res$m3p<0.05]>0)
 table(res$m4coef[res$m4p<0.05]>0)
@@ -302,7 +306,7 @@ table(res$m4coef[res$m4p<0.05 & res$m34n>100 & res$tcemv_filter == "yes"]>0)
 
 ```{r}
 load(paste0(ext_folder1,"05out/cohort_tcga"))
-load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/survival"))
 
 vals = unique(res$tcemv)
 valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
@@ -314,7 +318,10 @@ rm(valsgroup)
 cormat <- cbind(rho = sapply(vals, function(x) cor.test(cohort$mutcnt, cohort[,x], method = "spearman")$estimate),
                 p.value = sapply(vals, function(x) cor.test(cohort$mutcnt, cohort[,x], method = "spearman")$p.value))
 rownames(cormat) = vals
+save(cormat, file = paste0(ext_folder1,"05out/correlation"))
 
+plot(log(cohort$mutcnt[cohort$affweak_lelt>0]),cohort$affweak_lelt[cohort$affweak_lelt>0])
+cor.test(cohort$affweak_lelt[cohort$affweak_lelt>0 & cohort$mutcnt>100], log(cohort$mutcnt[cohort$affweak_lelt>0 & cohort$mutcnt>100]),method = "spearman")
 rm(cohort, res, res_ftest, vals)
 ```
 
@@ -322,7 +329,7 @@ rm(cohort, res, res_ftest, vals)
 ##Effect - coefs with significant cox model
 
 ```{r}
-load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/survival"))
 
 vals = unique(res$tcemv)
 valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
@@ -442,7 +449,7 @@ sort(table(names(unlist(bestvars))),decreasing = T)
 ##Best variable, cutoff and survival type and PLOTS
 
 ```{r}
-load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/survival"))
 load(paste0(ext_folder1,"05out/cohort_tcga"))
 
 colnames(res_ftest)[6:11] = paste("ftest", colnames(res_ftest)[6:11], sep = "_")
@@ -627,6 +634,7 @@ out4 = cbind(out4, cormat[match(out4$tcemv, rownames(cormat)),1:2])
 ```
 
 cox-model(cont.var) - cox-model(cat.var) - ggsurvplot log-rank test
+
 affweak_lelt - DSS - 0.05 - no (rho=0.29, p=3.473999e-155): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
 andweak_lelt - DSS - 0.05 - no (rho=0.29, p=7.985555e-160): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
 affweak_lelt - OS - 0.05 - no (rho=0.29, p=3.473999e-155): ALL(-++) - ACC(+++) - GBM(++-) - KIRP(-++) - LGG(+++)
@@ -647,11 +655,11 @@ rpstr_lflelt - PFI - 0.05 - no (rho=0.40, p=4.948440e-308): ALL(-++) - COAD(+++)
 rpstr_lt: all: 47338, 33326, blca: 33452, stad: 144579
 
 ```{r}
-load(paste0(ext_folder1,"05out/survival_01"))
+load(paste0(ext_folder1,"05out/survival"))
 load(paste0(ext_folder1,"05out/cohort_tcga"))
 
 
-i=9938
+i=99449
 temptcemvar = res$tcemv[i]
 tempbindingtype = strsplit(temptcemvar, "_")[[1]][1]
 if(grepl("_lflelt", temptcemvar) | grepl("_lelt", temptcemvar)) {tempcountvar = "net"} else if(grepl("_lflt", temptcemvar) | grepl("_lt", temptcemvar)) {tempcountvar = "nt"} else if(grepl("_lfle", temptcemvar) | grepl("_le", temptcemvar)) {tempcountvar = "ne"} else {tempcountvar = "nf"}
@@ -681,31 +689,26 @@ nrow(cohort_f)
 if(nrow(cohort_f) < 30) next()
 if(nrow(subset(cohort_f, OS_Event == 1)) <= 3) next()
 
-if(res$tumor[i] %in% c("cesc", "ov", "prad", "ucec", "ucs")) {
-  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f)
-  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvar, data = cohort_f))
-  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f)
-  table(cohort_f$tcemvargroup)
-  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + loh + mutcnt + tcemvargroup, data = cohort_f))
-  ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:5]), sep = " ", collapse = " "), font.main = 8, risk.table = T)
-  ggforest(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f), data = cohort_f)
-} else {
-  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f)
-  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvar, data = cohort_f))
-  coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f)
-  table(cohort_f$tcemvargroup)
-  cox.zph(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f))
-  ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:5]), sep = " ", collapse = " "), font.main = 8, risk.table = T)
-  ggforest(coxph(Surv(OS_Time, OS_Event) ~ clinical_AGE + clinical_GENDER + loh + mutcnt + tcemvargroup, data = cohort_f), data = cohort_f)
-}
 
-rm(temptcemvar, tempbindingtype, tempcountvar, )
+if(res$tumor[i] %in% c("cesc", "ov", "prad", "ucec", "ucs")) cohort_f %<>% dplyr::select(-clinical_GENDER) 
+
+cohort_f1 = cohort_f %>%  dplyr::select(-tcemvargroup)
+cohort_f2 = cohort_f %>%  dplyr::select(-tcemvar)
+
+coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f1)
+cox.zph(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f1))
+coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f2)
+cox.zph(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f2))
+ggsurvplot(fit = survfit(Surv(time = OS_Time, event = OS_Event) ~ tcemvargroup, data = cohort_f2), pval = TRUE, legend.title = res$tcemv[i], surv.median.line = c("hv"), title = paste(c("Dataset:", res[i,1:5]), sep = " ", collapse = " "), font.main = 8, risk.table = T)
+ggforest(coxph(Surv(OS_Time, OS_Event) ~ ., data = cohort_f2))
+
+rm(temptcemvar, tempbindingtype, tempcountvar, i)
 ```
 
 ## Positive coef heatmaps
 
 ```{r}
-load(paste0(ext_folder1,"04out/survival_01"))
+load(paste0(ext_folder1,"04out/survival"))
 
 vals = unique(res$tcemv)
 valsgroup = sapply(vals, function(x) strsplit(x, "_")[[1]][2])
@@ -838,5 +841,9 @@ for(i in surv_types) {
 
 
 ```
+
+klonális / nem klonális mutációk
+dpd arány összehasonlítása
+3 alatti frekvencia, 3 fölötti
 
 
