@@ -1,0 +1,70 @@
+---
+title: "Clonal analysis"
+author: "Balazs Koncz"
+date: '2020 11 24 '
+output: html_document
+---
+
+```{r}
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+proteome = read.delim(file = paste0(ext_folder1, "objects/uniprot-filtered-organism__Homo+sapiens+(Human)+[9606]_.tab"), stringsAsFactors = F)
+dtann = read.table("D:/CloudStation/fitness-model/create_neoantigens/annotated/AL4602.txt", header = F, stringsAsFactors = F, col.names = c("Uploaded_variation","Location","Allele","Gene","Feature","Feature_type","Consequence","cDNA_position","CDS_position","Protein_position","Amino_acids","Codons","Existing_variation","Extra"))
+
+dtann = dtann[dtann$Consequence == "missense_variant",]
+dtann = dtann[,c("Uploaded_variation","Feature","Protein_position","Amino_acids","Extra")]
+class(dtann$Protein_position) = "integer"
+dtann$status = sapply(dtann$Feature, function(x) ifelse(length(grep(x,proteome$Ensembl.transcript)) > 0, proteome$Status[grepl(x,proteome$Ensembl.transcript)],NA))
+dtann = subset(dtann, status == "reviewed")
+dtann$origaa = sapply(dtann$Amino_acids, function(x) substr(x,1,1))
+dtann$mutaa = sapply(dtann$Amino_acids, function(x) substr(x,3,3))
+dtann$origseq = sapply(dtann$Extra, function(x) gsub("WildtypeProtein=", "", grep("WildtypeProtein=", strsplit(x, ";")[[1]], value = T)))
+dtann$validmut = apply(dtann, 1, function(x) substr(x[9],as.numeric(x[3]),as.numeric(x[3])) == x[7])
+dtann = subset(dtann, validmut == TRUE)
+dtann$protlen = nchar(dtann$origseq)
+dtann$mutseq = apply(dtann, 1, function(x) paste0(substr(x[9],1,as.numeric(x[3])-1),x[8],substr(x[9],as.numeric(x[3])+1,x[11])))
+
+aaregion = t(apply(dtann,1,function(x) {
+  temppos = as.numeric(x[3])
+  templen = as.numeric(x[11])
+  temporigseq = x[9]
+  tempmutseq = x[12]
+  if(temppos<9) {
+    out = c(substr(temporigseq,1,temppos+8),substr(tempmutseq,1,temppos+8))
+  } else if(temppos>templen-8) {
+    out = c(substr(temporigseq,temppos-8,templen),substr(tempmutseq,temppos-8,templen))
+  } else {
+    out = c(substr(temporigseq,temppos-8,temppos+8),substr(tempmutseq,temppos-8,temppos+8))
+  }
+  out
+}))
+colnames(aaregion) = c("origreg", "mutreg")
+
+dtann = cbind(dtann, aaregion)
+
+origmers = lapply(dtann$origreg, function(x) substring(x, 1:(nchar(x)-8), 9:nchar(x)))
+mutmers = lapply(dtann$mutreg, function(x) substring(x, 1:(nchar(x)-8), 9:nchar(x)))
+
+
+
+
+
+rawdata = read.table(file = paste0(ext_folder1, "objects/raw_vcf/AL4602.vcf"), sep = "\t", col.names = c("CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","NORMAL","TUMOR"))
+
+
+
+
+
+
+
+
+
+
+
+
+load(paste0(ext_folder1, "objects/fitness_recogn_matrices/AL4602_aff_rm"))
+aff = AU5884
+load(paste0(ext_folder1, "objects/fitness_recogn_matrices/AU5884_rm_rm"))
+rp = AU5884
+```
+
