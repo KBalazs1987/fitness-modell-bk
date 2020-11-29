@@ -12,7 +12,7 @@ setwd("d:/CloudStation/mygit/fitness-modell-bk/")
 library(Rfast)
 library(purrr)
 library(furrr)
-library(pbapply)
+#library(pbapply)
 ext_folder1 = "d:/CloudStation/fitness-model-ext/"
 ```
 
@@ -140,49 +140,49 @@ patprop_pfreq <- future_map(.x = ids, .f = function(x) {
   load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", x))
   #ORIG
   origreg = dtann$origreg[dtann$sampleid == x]
-  origmers = lapply(origreg, function(y) substring(y, 1:(nchar(y)-8), 9:nchar(y)))
-  origaffmins = sapply(origmers, function(z) {
-    cm = colMins(binding_matrix$aff[,z], value = T)
-    names(cm) = z
+  origmers = lapply(origreg, function(a) substring(a, 1:(nchar(a)-8), 9:nchar(a)))
+  origaffmins = sapply(origmers, function(b) {
+    cm = colMins(binding_matrix$aff[,b], value = T)
+    names(cm) = b
     cm
   })
-  orig_affweak_n = sapply(origaffmins, function(z) sum(z<500))
-  orig_affweak_medpf = sapply(origaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<500],4,8)]))
-  orig_affstr_n = sapply(origaffmins, function(z) sum(z<50))
-  orig_affstr_medpf = sapply(origaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<50],4,8)]))
+  orig_affweak_n = sapply(origaffmins, function(d) sum(d<500))
+  orig_affweak_medpf = sapply(origaffmins, function(e) median(pentamerfreq_tcem[substr(names(e)[e<500],4,8)]))
+  orig_affstr_n = sapply(origaffmins, function(f) sum(f<50))
+  orig_affstr_medpf = sapply(origaffmins, function(g) median(pentamerfreq_tcem[substr(names(g)[g<50],4,8)]))
   
-  origrpmins = sapply(origmers, function(z) {
-    cm = colMins(binding_matrix$rp[,z], value = T)
-    names(cm) = z
+  origrpmins = sapply(origmers, function(h) {
+    cm = colMins(binding_matrix$rp[,h], value = T)
+    names(cm) = h
     cm
   })
-  orig_rpweak_n = sapply(origrpmins, function(z) sum(z<2))
-  orig_rpweak_medpf = sapply(origrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<2],4,8)]))
-  orig_rpstr_n = sapply(origrpmins, function(z) sum(z<.5))
-  orig_rpstr_medpf = sapply(origrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<.5],4,8)]))
+  orig_rpweak_n = sapply(origrpmins, function(i) sum(i<2))
+  orig_rpweak_medpf = sapply(origrpmins, function(j) median(pentamerfreq_tcem[substr(names(j)[j<2],4,8)]))
+  orig_rpstr_n = sapply(origrpmins, function(k) sum(k<.5))
+  orig_rpstr_medpf = sapply(origrpmins, function(l) median(pentamerfreq_tcem[substr(names(l)[l<.5],4,8)]))
   
   #MUT
   mutreg = dtann$mutreg[dtann$sampleid == x]
-  mutmers = lapply(mutreg, function(y) substring(y, 1:(nchar(y)-8), 9:nchar(y)))
-  mutaffmins = sapply(mutmers, function(z) {
-    cm = colMins(binding_matrix$aff[,z], value = T)
-    names(cm) = z
+  mutmers = lapply(mutreg, function(m) substring(m, 1:(nchar(m)-8), 9:nchar(m)))
+  mutaffmins = sapply(mutmers, function(n) {
+    cm = colMins(binding_matrix$aff[,n], value = T)
+    names(cm) = n
     cm
   })
-  mut_affweak_n = sapply(mutaffmins, function(z) sum(z<500))
-  mut_affweak_medpf = sapply(mutaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<500],4,8)]))
-  mut_affstr_n = sapply(mutaffmins, function(z) sum(z<50))
-  mut_affstr_medpf = sapply(mutaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<50],4,8)]))
+  mut_affweak_n = sapply(mutaffmins, function(o) sum(o<500))
+  mut_affweak_medpf = sapply(mutaffmins, function(p) median(pentamerfreq_tcem[substr(names(p)[p<500],4,8)]))
+  mut_affstr_n = sapply(mutaffmins, function(q) sum(q<50))
+  mut_affstr_medpf = sapply(mutaffmins, function(r) median(pentamerfreq_tcem[substr(names(r)[r<50],4,8)]))
   
-  mutrpmins = sapply(mutmers, function(z) {
-    cm = colMins(binding_matrix$rp[,z], value = T)
-    names(cm) = z
+  mutrpmins = sapply(mutmers, function(s) {
+    cm = colMins(binding_matrix$rp[,s], value = T)
+    names(cm) = s
     cm
   })
-  mut_rpweak_n = sapply(mutrpmins, function(z) sum(z<2))
-  mut_rpweak_medpf = sapply(mutrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<2],4,8)]))
-  mut_rpstr_n = sapply(mutrpmins, function(z) sum(z<.5))
-  mut_rpstr_medpf = sapply(mutrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<.5],4,8)]))
+  mut_rpweak_n = sapply(mutrpmins, function(t) sum(t<2))
+  mut_rpweak_medpf = sapply(mutrpmins, function(u) median(pentamerfreq_tcem[substr(names(u)[u<2],4,8)]))
+  mut_rpstr_n = sapply(mutrpmins, function(v) sum(v<.5))
+  mut_rpstr_medpf = sapply(mutrpmins, function(w) median(pentamerfreq_tcem[substr(names(w)[w<.5],4,8)]))
   out = list(patient, uploaded_variation=uploaded_variation, feature=feature, 
              origreg=origreg, origmers=origmers, origaffmins=origaffmins, 
              orig_affweak_n=orig_affweak_n, orig_affweak_medpf=orig_affweak_medpf, 
@@ -202,157 +202,6 @@ patprop_pfreq <- future_map(.x = ids, .f = function(x) {
 save(patprop_pfreq, file = paste0(ext_folder1, "06out/patprop_pfreq"))
 
 patprop_pfreq[[1]][2]
-
-
-patprop_pfreq <- parLapply(cl = c1, X = ids[1:2], fun = function(x) {
-  uploaded_variation = dtann$Uploaded_variation[dtann$sampleid == x]
-  feature = dtann$Feature[dtann$sampleid == x]
-  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", x))
-  #ORIG
-  origreg = dtann$origreg[dtann$sampleid == x]
-  origmers = lapply(origreg, function(y) substring(y, 1:(nchar(y)-8), 9:nchar(y)))
-  origaffmins = sapply(origmers, function(z) {
-    cm = colMins(binding_matrix$aff[,z], value = T)
-    names(cm) = z
-    cm
-  })
-  orig_affweak_n = sapply(origaffmins, function(z) sum(z<500))
-  orig_affweak_medpf = sapply(origaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<500],4,8)]))
-  orig_affstr_n = sapply(origaffmins, function(z) sum(z<50))
-  orig_affstr_medpf = sapply(origaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<50],4,8)]))
-  
-  origrpmins = sapply(origmers, function(z) {
-    cm = colMins(binding_matrix$rp[,z], value = T)
-    names(cm) = z
-    cm
-  })
-  orig_rpweak_n = sapply(origrpmins, function(z) sum(z<2))
-  orig_rpweak_medpf = sapply(origrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<2],4,8)]))
-  orig_rpstr_n = sapply(origrpmins, function(z) sum(z<.5))
-  orig_rpstr_medpf = sapply(origrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<.5],4,8)]))
-  
-  #MUT
-  mutreg = dtann$mutreg[dtann$sampleid == x]
-  mutmers = lapply(mutreg, function(y) substring(y, 1:(nchar(y)-8), 9:nchar(y)))
-  mutaffmins = sapply(mutmers, function(z) {
-    cm = colMins(binding_matrix$aff[,z], value = T)
-    names(cm) = z
-    cm
-  })
-  mut_affweak_n = sapply(mutaffmins, function(z) sum(z<500))
-  mut_affweak_medpf = sapply(mutaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<500],4,8)]))
-  mut_affstr_n = sapply(mutaffmins, function(z) sum(z<50))
-  mut_affstr_medpf = sapply(mutaffmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<50],4,8)]))
-  
-  mutrpmins = sapply(mutmers, function(z) {
-    cm = colMins(binding_matrix$rp[,z], value = T)
-    names(cm) = z
-    cm
-  })
-  mut_rpweak_n = sapply(mutrpmins, function(z) sum(z<2))
-  mut_rpweak_medpf = sapply(mutrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<2],4,8)]))
-  mut_rpstr_n = sapply(mutrpmins, function(z) sum(z<.5))
-  mut_rpstr_medpf = sapply(mutrpmins, function(z) median(pentamerfreq_tcem[substr(names(z)[z<.5],4,8)]))
-  out = list(uploaded_variation=uploaded_variation, feature=feature, 
-             origreg=origreg, origmers=origmers, origaffmins=origaffmins, 
-             orig_affweak_n=orig_affweak_n, orig_affweak_medpf=orig_affweak_medpf, 
-             orig_affstr_n=orig_affstr_n, orig_affstr_medpf=orig_affstr_medpf,
-             origrpmins=origrpmins, 
-             orig_rpweak_n=orig_rpweak_n, orig_rpweak_medpf=orig_rpweak_medpf, 
-             orig_rpstr_n=orig_rpstr_n, orig_rpstr_medpf=orig_rpstr_medpf,
-             mutreg=mutreg, mutmers=mutmers, mutaffmins=mutaffmins, 
-             mut_affweak_n=mut_affweak_n, mut_affweak_medpf=mut_affweak_medpf, 
-             mut_affstr_n=mut_affstr_n, mut_affstr_medpf=mut_affstr_medpf,
-             mutrpmins=mutrpmins, 
-             mut_rpweak_n=mut_rpweak_n, mut_rpweak_medpf=mut_rpweak_medpf, 
-             mut_rpstr_n=mut_rpstr_n, mut_rpstr_medpf=mut_rpstr_medpf)
-  names(out) = x
-  out
-})
-
-
-
-
-dtann = cbind(dtann, orig_affweak_n = NA, orig_affweak_medpf = NA, 
-              orig_affstr_n = NA, orig_affstr_medpf = NA, 
-              orig_rpweak_n = NA, orig_rpweak_medpf = NA, 
-              orig_rpstr_n = NA, orig_rpstr_medpf = NA, 
-              mut_affweak_n = NA, mut_affweak_medpf = NA, 
-              mut_affstr_n = NA, mut_affstr_medpf = NA, 
-              mut_rpweak_n = NA, mut_rpweak_medpf = NA, 
-              mut_rpstr_n = NA, mut_rpstr_medpf = NA)
-
-temp = pbsapply(ids, function(x) {
-  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", x))
-  origmers = lapply(dtann$origreg[dtann$sampleid == x], function(y) substring(y, 1:(nchar(y)-8), 9:nchar(y)))
-  sapply(origmers, function(z) {sum(colMins(binding_matrix$aff[,z], value = T)<500)})
-})
-
-for(i in ids) {
-  idx = match(i, ids)
-  print(idx)
-  origmers = lapply(dtann$origreg[dtann$sampleid == i], function(x) substring(x, 1:(nchar(x)-8), 9:nchar(x)))
-  mutmers = lapply(dtann$mutreg[dtann$sampleid == i], function(x) substring(x, 1:(nchar(x)-8), 9:nchar(x)))
-  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", i))
-  
-  dtann[dtann$sampleid == i,"orig_affweak_n"] = sapply(origmers, function(x) {
-    sum(colMins(binding_matrix$aff[,x], value = T)<500)
-  })
-  dtann[dtann$sampleid == i,"orig_affweak_medpf"] = sapply(origmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$aff[,x], value = T)<500],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"orig_affstr_n"] = sapply(origmers, function(x) {
-    sum(colMins(binding_matrix$aff[,x], value = T)<50)
-  })
-  dtann[dtann$sampleid == i,"orig_affstr_medpf"] = sapply(origmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$aff[,x], value = T)<50],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"orig_rpweak_n"] = sapply(origmers, function(x) {
-    sum(colMins(binding_matrix$rp[,x], value = T)<2)
-  })
-  dtann[dtann$sampleid == i,"orig_rpweak_medpf"] = sapply(origmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$rp[,x], value = T)<2],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"orig_rpstr_n"] = sapply(origmers, function(x) {
-    sum(colMins(binding_matrix$rp[,x], value = T)<0.5)
-  })
-  dtann[dtann$sampleid == i,"orig_rpstr_medpf"] = sapply(origmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$rp[,x], value = T)<0.5],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"mut_affweak_n"] = sapply(mutmers, function(x) {
-    sum(colMins(binding_matrix$aff[,x], value = T)<500)
-  })
-  dtann[dtann$sampleid == i,"mut_affweak_medpf"] = sapply(mutmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$aff[,x], value = T)<500],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"mut_affstr_n"] = sapply(mutmers, function(x) {
-    sum(colMins(binding_matrix$aff[,x], value = T)<50)
-  })
-  dtann[dtann$sampleid == i,"mut_affstr_medpf"] = sapply(mutmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$aff[,x], value = T)<50],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"mut_rpweak_n"] = sapply(mutmers, function(x) {
-    sum(colMins(binding_matrix$rp[,x], value = T)<2)
-  })
-  dtann[dtann$sampleid == i,"mut_rpweak_medpf"] = sapply(mutmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$rp[,x], value = T)<2],4,8)])
-  })
-  
-  dtann[dtann$sampleid == i,"mut_rpstr_n"] = sapply(mutmers, function(x) {
-    sum(colMins(binding_matrix$rp[,x], value = T)<0.5)
-  })
-  dtann[dtann$sampleid == i,"mut_rpstr_medpf"] = sapply(mutmers, function(x) {
-    median(pentamerfreq_tcem[substr(x[colMins(binding_matrix$rp[,x], value = T)<0.5],4,8)])
-  })
-}
-rm(i, idx, mutmers, origmers, binding_matrix)
-save(dtann, file = paste0(ext_folder1, "06out/dtann_02"))
 
 
 
