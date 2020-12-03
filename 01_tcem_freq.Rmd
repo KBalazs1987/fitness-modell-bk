@@ -112,8 +112,8 @@ nonamer_selection = function(p,n) {
 
 lapply(ids, function(x) {
   #NEO
-  load(paste0(ext_folder1, "neoeps/", x))
-  load(paste0(ext_folder1, "recogn_matrices_neo/", x))
+  load(paste0(ext_folder1, "tcga_data/neoeps/", x))
+  load(paste0(ext_folder1, "tcga_data/recogn_matrices_neo/", x))
   neoeps_list = lapply(neoeps_list, function(y) y[nchar(y) == 9])
   pos = as.numeric(gsub("[[:upper:]]","",sapply(strsplit(names(neoeps_list),"\\."), function(z) z[3]))) #mutation positions
   n9mers = lengths(neoeps_list) #hany nonamer tartozik egy mutaciohoz

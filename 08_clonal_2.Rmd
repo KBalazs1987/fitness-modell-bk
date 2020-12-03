@@ -1,0 +1,395 @@
+---
+title: "Determine binding nonamers and their original nonamers"
+author: "Balazs Koncz"
+date: '2020 12 03 '
+output: html_document
+---
+
+#Setup
+
+```{r}
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+library(Rfast)
+library(fastmatch)
+library(purrr)
+library(furrr)
+library(pbapply)
+library(parallel)
+library(Hmisc)
+library(ggplot2)
+library(ggpubr)
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+fillnafun = function(v,l) {
+  outvec = c(v,rep(NA,l-length(v)))
+  names(outvec) = NULL
+  outvec
+}
+```
+
+#Collect peptides
+
+```{r}
+annfiles = list.files("D:/CloudStation/fitness-model/create_neoantigens/annotated/", full.names = T)
+
+dtann1 = read.table("D:/CloudStation/fitness-model/create_neoantigens/annotated/AL4602.txt", header = F, stringsAsFactors = F, col.names = c("Uploaded_variation","Location","Allele","Gene","Feature","Feature_type","Consequence","cDNA_position","CDS_position","Protein_position","Amino_acids","Codons","Existing_variation","Extra"))
+dtann = matrix(NA, nrow = 0, ncol = ncol(dtann1), dimnames = list(NULL,colnames(dtann1)))
+rm(dtann1)
+
+for(i in annfiles) {
+  tempannfile = read.table(i, header = F, stringsAsFactors = F, col.names = colnames(dtann))
+  dtann = rbind(dtann, tempannfile)
+}
+rm(tempannfile, annfiles, i)
+
+dtann = dtann[dtann$Consequence == "missense_variant",]
+dtann$sampleid = sapply(dtann$Uploaded_variation, function(x) strsplit(x, "_")[[1]][5])
+dtann = dtann[,c("sampleid", "Uploaded_variation","Feature","Protein_position","Amino_acids","Extra")]
+#class(dtann$Protein_position) = "numeric"
+
+dtann$origaa = sapply(dtann$Amino_acids, function(x) substr(x,1,1))
+dtann$mutaa = sapply(dtann$Amino_acids, function(x) substr(x,3,3))
+dtann$mutation = apply(dtann, 1, function(x) paste0(x[7], x[4], x[8]))
+dtann$origseq = pbsapply(dtann$Extra, function(x) gsub("WildtypeProtein=", "", grep("WildtypeProtein=", strsplit(x, ";")[[1]], value = T)))
+
+dtann$validmut = pbapply(dtann, 1, function(x) substr(x[10],as.numeric(x[4]),as.numeric(x[4])) == x[7])
+dtann = subset(dtann, validmut == TRUE) #all of them
+dtann$protlen = nchar(dtann$origseq)
+dtann$mutseq = pbapply(dtann, 1, function(x) paste0(substr(x[10],1,as.numeric(x[4])-1),x[8],substr(x[10],as.numeric(x[4])+1,x[12])))
+
+#determine -8 +8 region
+aaregion = t(pbapply(dtann,1,function(x) {
+  temppos = as.numeric(x[4])
+  templen = as.numeric(x[12])
+  temporigseq = x[10]
+  tempmutseq = x[13]
+  if(temppos<9) {
+    out = c(substr(temporigseq,1,temppos+8),substr(tempmutseq,1,temppos+8))
+  } else if(temppos>templen-8) {
+    out = c(substr(temporigseq,temppos-8,templen),substr(tempmutseq,temppos-8,templen))
+  } else {
+    out = c(substr(temporigseq,temppos-8,temppos+8),substr(tempmutseq,temppos-8,temppos+8))
+  }
+  out
+}))
+colnames(aaregion) = c("origreg", "mutreg")
+dtann = cbind(dtann, aaregion)
+rm(aaregion)
+
+dtann = unique(dtann[,c("sampleid", "Uploaded_variation", "Feature", "mutation", "origreg", "mutreg")])
+dtann = dtann[!grepl('X|U', dtann$origreg) & !grepl('X|U', dtann$mutreg),]
+dtann = dtann[nchar(dtann$origreg)>=9,]
+save(dtann, file = paste0(ext_folder1, "08out/dtann_01"))
+```
+
+
+#Filter (duplicated mutations)
+
+```{r}
+load(paste0(ext_folder1, "08out/dtann_01"))
+
+dtann$dup = duplicated(dtann[,c("sampleid", "Uploaded_variation", "origreg", "mutreg")])
+dtann = dtann[dtann$dup == FALSE,]
+dtann$dup = NULL
+dtann$origreglen = nchar(dtann$origreg)
+dtann$Uploaded_variation[duplicated(dtann$Uploaded_variation)]
+
+dups = unique(dtann$Uploaded_variation[duplicated(dtann$Uploaded_variation)])
+dtann = dtann[!dtann$Uploaded_variation %in% dups,] #kizartam ahol nem egyertelmu az aminosavszekvencia
+rm(dups)
+
+save(dtann, file = paste0(ext_folder1, "08out/dtann_02"))
+```
+
+#Determine binding peptides
+
+```{r}
+nonamer_selection = function(p,n) {
+  if(n == 0 | p<4) {
+    c(F,F,F,F,F,F,F,F,F)
+  } else if(n == 2) {
+    c(F,T,F,F,F,F,F,F,F)
+  } else if(n == 3) {
+    c(F,T,T,F,F,F,F,F,F)
+  } else if(n == 4 & p == 4) {
+    c(T,F,F,F,F,F,F,F,F)
+  } else if(n == 4 & p != 4) {
+    c(F,T,T,T,F,F,F,F,F)
+  } else if(n == 4 & p == 5) {
+    c(T,T,F,F,F,F,F,F,F)
+  } else if(n == 5 & p != 5) {
+    c(F,T,T,T,T,F,F,F,F)
+  } else if(n == 6 & p == 6) {
+    c(T,T,T,F,F,F,F,F,F)
+  } else if(n == 6 & p != 6) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else if(n == 7 & p == 7) {
+    c(T,T,T,T,F,F,F,F,F)
+  } else if(n == 7 & p != 7) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else if(n == 8 & p == 8) {
+    c(T,T,T,T,T,F,F,F,F)
+  } else if(n == 8 & p != 8) {
+    c(F,T,T,T,T,T,F,F,F)
+  } else {
+    c(F,T,T,T,T,T,F,F,F)
+  }
+}
+
+load(paste0(ext_folder1, "08out/dtann_02"))
+ids = unique(dtann$sampleid)
+
+i=0
+pblapply(ids, function(x) {
+  i = i+1
+  .GlobalEnv$i = i
+  #NEO
+  neoeps_list = lapply(dtann$mutreg[dtann$sampleid == x], function(a) substring(a, 1:(nchar(a)-8), 9:nchar(a)))
+  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", x))
+  names(neoeps_list) = dtann$Uploaded_variation[dtann$sampleid == x]
+  pos = as.numeric(gsub("[[:upper:]]","",dtann$mutation[dtann$sampleid == x])) #mutation positions
+  n9mers = lengths(neoeps_list) #hany nonamer tartozik egy mutaciohoz
+  tmn = lapply(1:length(neoeps_list), function(u) neoeps_list[[u]][nonamer_selection(pos[u],n9mers[u])]) #nonamers which carry mutation in TCEM position
+  names(tmn) = names(neoeps_list)
+  tmn_unlist = unlist(tmn)
+  names(tmn_unlist) = sapply(names(tmn_unlist), function(v) substr(v,1,(nchar(v)-1)))
+  tmn_unlist = tmn_unlist[!is.na(tmn_unlist)]
+  #STRONG NEO
+  aff_str_tmn_indices = colMins(binding_matrix$aff[,tmn_unlist], value = T)<50
+  aff_str_tmn = tmn_unlist[aff_str_tmn_indices] #ezeket kell venni az origbol is!!
+  rp_str_tmn_indices = colMins(binding_matrix$rp[,tmn_unlist], value = T)<0.5
+  rp_str_tmn = tmn_unlist[rp_str_tmn_indices] #ezeket kell venni az origbol is!!
+  #WEAK NEO
+  aff_weak_tmn_indices = colMins(binding_matrix$aff[,tmn_unlist], value = T)<500
+  aff_weak_tmn = tmn_unlist[aff_weak_tmn_indices] #ezeket kell venni az origbol is!!
+  rp_weak_tmn_indices = colMins(binding_matrix$rp[,tmn_unlist], value = T)<2
+  rp_weak_tmn = tmn_unlist[rp_weak_tmn_indices] #ezeket kell venni az origbol is!!
+  #ORIG
+  origeps_list = lapply(dtann$origreg[dtann$sampleid == x], function(a) substring(a, 1:(nchar(a)-8), 9:nchar(a)))
+  names(origeps_list) = dtann$Uploaded_variation[dtann$sampleid == x]
+  tmo = lapply(1:length(origeps_list), function(u) origeps_list[[u]][nonamer_selection(pos[u],n9mers[u])])
+  names(tmo) = names(origeps_list)
+  tmo_unlist = unlist(tmo)
+  names(tmo_unlist) = sapply(names(tmo_unlist), function(v) substr(v,1,(nchar(v)-1)))
+  tmo_unlist = tmo_unlist[!is.na(tmo_unlist)]
+  #STRONG ORIG
+  aff_str_tmo = tmo_unlist[aff_str_tmn_indices] #ezeket vettuk a neobol!!
+  rp_str_tmo = tmo_unlist[rp_str_tmn_indices] #ezeket vettuk a neobol!!
+  #WEAK ORIG
+  aff_weak_tmo = tmo_unlist[aff_weak_tmn_indices]
+  rp_weak_tmo = tmo_unlist[rp_weak_tmn_indices]
+
+  or_str_tmn = unique(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo)))[,1]
+  or_str_tmo = unique(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo)))[,2]
+  or_weak_tmn = unique(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo)))[,1]
+  or_weak_tmo = unique(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo)))[,2]
+  
+  temp_str = cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo))[duplicated(cbind(c(aff_str_tmn, rp_str_tmn),c(aff_str_tmo, rp_str_tmo))),,drop=F]
+  and_str_tmn = temp_str[,1]
+  and_str_tmo = temp_str[,2]
+  temp_weak = cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo))[duplicated(cbind(c(aff_weak_tmn, rp_weak_tmn),c(aff_weak_tmo, rp_weak_tmo))),,drop=F]
+  and_weak_tmn = temp_weak[,1]
+  and_weak_tmo = temp_weak[,2]
+  
+  #JOIN INTO A LIST
+  tmn_list = list(tmn = tmn,tmn_unlist = tmn_unlist,aff_str_tmn = aff_str_tmn,rp_str_tmn = rp_str_tmn,or_str_tmn = or_str_tmn,and_str_tmn = and_str_tmn,aff_weak_tmn = aff_weak_tmn,rp_weak_tmn = rp_weak_tmn,or_weak_tmn = or_weak_tmn,and_weak_tmn = and_weak_tmn, tmo = tmo,tmo_unlist = tmo_unlist,aff_str_tmo = aff_str_tmo,rp_str_tmo = rp_str_tmo,or_str_tmo = or_str_tmo,and_str_tmo = and_str_tmo,aff_weak_tmo = aff_weak_tmo,rp_weak_tmo = rp_weak_tmo,or_weak_tmo = or_weak_tmo,and_weak_tmo = and_weak_tmo)
+  save(tmn_list, file = paste0(ext_folder1,"08out/tcem_mutated_nonamers/", x))
+})
+```
+
+#Original and neo TCEM frequencies
+
+```{r}
+ids = list.files(paste0(ext_folder1, "08out/tcem_mutated_nonamers/")) #199
+load(paste0(ext_folder1, "objects/pentamerfreq_tcem"))
+
+pblapply(ids, function(x) {
+  load(paste0(ext_folder1, "08out/tcem_mutated_nonamers/", x))
+  aff_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_str_orig)>0) names(aff_str_orig) = paste0(names(tmn_list$aff_str_tmo),".",substr(tmn_list$aff_str_tmo,4,8))
+  rp_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_str_orig)>0) names(rp_str_orig) = paste0(names(tmn_list$rp_str_tmo),".",substr(tmn_list$rp_str_tmo,4,8))
+  and_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(and_str_orig)>0) names(and_str_orig) = paste0(names(tmn_list$and_str_tmo),".",substr(tmn_list$and_str_tmo,4,8))
+  or_str_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(or_str_orig)>0) names(or_str_orig) = paste0(names(tmn_list$or_str_tmo),".",substr(tmn_list$or_str_tmo,4,8))
+  aff_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_weak_orig)>0) names(aff_weak_orig) = paste0(names(tmn_list$aff_weak_tmo),".",substr(tmn_list$aff_weak_tmo,4,8))
+  rp_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_weak_orig)>0) names(rp_weak_orig) = paste0(names(tmn_list$rp_weak_tmo),".",substr(tmn_list$rp_weak_tmo,4,8))
+  and_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(and_weak_orig)>0) names(and_weak_orig) = paste0(names(tmn_list$and_weak_tmo),".",substr(tmn_list$and_weak_tmo,4,8))
+  or_weak_orig = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmo,4,8),names(pentamerfreq_tcem))]
+  if(length(or_weak_orig)>0) names(or_weak_orig) = paste0(names(tmn_list$or_weak_tmo),".",substr(tmn_list$or_weak_tmo,4,8))
+  aff_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_str_neo)>0) names(aff_str_neo) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmn,4,8))
+  rp_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_str_neo)>0) names(rp_str_neo) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmn,4,8))
+  and_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$and_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_str_neo)>0) names(and_str_neo) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmn,4,8))
+  or_str_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$or_str_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_str_neo)>0) names(or_str_neo) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmn,4,8))
+  aff_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$aff_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(aff_weak_neo)>0) names(aff_weak_neo) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmn,4,8))
+  rp_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$rp_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(rp_weak_neo)>0) names(rp_weak_neo) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmn,4,8))
+  and_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$and_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(and_weak_neo)>0) names(and_weak_neo) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmn,4,8))
+  or_weak_neo = pentamerfreq_tcem[fmatch(substr(tmn_list$or_weak_tmn,4,8),names(pentamerfreq_tcem))]
+  if(length(or_weak_neo)>0) names(or_weak_neo) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmn,4,8))
+  
+  #DIFFS
+  aff_str_diff = aff_str_orig - aff_str_neo
+  if(length(aff_str_diff)>0) names(aff_str_diff) = paste0(names(tmn_list$aff_str_tmn),".",substr(tmn_list$aff_str_tmo,4,8),".",substr(tmn_list$aff_str_tmn,4,8))
+  rp_str_diff = rp_str_orig - rp_str_neo
+  if(length(rp_str_diff)>0) names(rp_str_diff) = paste0(names(tmn_list$rp_str_tmn),".",substr(tmn_list$rp_str_tmo,4,8),".",substr(tmn_list$rp_str_tmn,4,8))
+  and_str_diff = and_str_orig - and_str_neo
+  if(length(and_str_diff)>0) names(and_str_diff) = paste0(names(tmn_list$and_str_tmn),".",substr(tmn_list$and_str_tmo,4,8),".",substr(tmn_list$and_str_tmn,4,8))
+  or_str_diff = or_str_orig - or_str_neo
+  if(length(or_str_diff)>0) names(or_str_diff) = paste0(names(tmn_list$or_str_tmn),".",substr(tmn_list$or_str_tmo,4,8),".",substr(tmn_list$or_str_tmn,4,8))
+  aff_weak_diff = aff_weak_orig - aff_weak_neo
+  if(length(aff_weak_diff)>0) names(aff_weak_diff) = paste0(names(tmn_list$aff_weak_tmn),".",substr(tmn_list$aff_weak_tmo,4,8),".",substr(tmn_list$aff_weak_tmn,4,8))
+  rp_weak_diff = rp_weak_orig - rp_weak_neo
+  if(length(rp_weak_diff)>0) names(rp_weak_diff) = paste0(names(tmn_list$rp_weak_tmn),".",substr(tmn_list$rp_weak_tmo,4,8),".",substr(tmn_list$rp_weak_tmn,4,8))
+  and_weak_diff = and_weak_orig - and_weak_neo
+  if(length(and_weak_diff)>0) names(and_weak_diff) = paste0(names(tmn_list$and_weak_tmn),".",substr(tmn_list$and_weak_tmo,4,8),".",substr(tmn_list$and_weak_tmn,4,8))
+  or_weak_diff = or_weak_orig - or_weak_neo
+  if(length(or_weak_diff)>0) names(or_weak_diff) = paste0(names(tmn_list$or_weak_tmn),".",substr(tmn_list$or_weak_tmo,4,8),".",substr(tmn_list$or_weak_tmn,4,8))
+
+  
+  tcemfreqs = list(
+    aff_str_orig = aff_str_orig, aff_str_neo = aff_str_neo, aff_str_diff = aff_str_diff,
+    rp_str_orig = rp_str_orig, rp_str_neo = rp_str_neo, rp_str_diff = rp_str_diff,
+    and_str_orig = and_str_orig, and_str_neo = and_str_neo, and_str_diff = and_str_diff,
+    or_str_orig = or_str_orig, or_str_neo = or_str_neo, or_str_diff = or_str_diff,
+    aff_weak_orig = aff_weak_orig, aff_weak_neo = aff_weak_neo, aff_weak_diff = aff_weak_diff,
+    rp_weak_orig = rp_weak_orig, rp_weak_neo = rp_weak_neo, rp_weak_diff = rp_weak_diff,
+    and_weak_orig = and_weak_orig, and_weak_neo = and_weak_neo, and_weak_diff = and_weak_diff,
+    or_weak_orig = or_weak_orig, or_weak_neo = or_weak_neo, or_weak_diff = or_weak_diff)
+  save(tcemfreqs, file = paste0(ext_folder1,"08out/tcem_mutated_nonamers_tcemfreqs/", x))
+})
+
+#Drop patients without data
+patdropped = ids[sapply(ids, function(x) {
+  load(paste0(ext_folder1, "08out/tcem_mutated_nonamers_tcemfreqs/", x))
+  all(lengths(tcemfreqs)==0)
+})]
+
+for(i in 1:length(patdropped)) {
+  unlink(paste0(ext_folder1, "08out/tcem_mutated_nonamers_tcemfreqs/", patdropped[i]))
+} #198
+rm(patdropped, pentamerfreq_tcem)
+
+# load(paste0(ext_folder1, "01out/tcem_mutated_nonamers_tcemfreqs/", ids[1]))
+# value_names = names(tcemfreqs)
+# save(value_names, file = paste0(ext_folder1,"objects/value_names"))
+```
+
+#Calculate TCEM related variables to clonality data
+
+```{r}
+ids = list.files(paste0(ext_folder1, "08out/tcem_mutated_nonamers_tcemfreqs/")) #198
+load(paste0(ext_folder1, "06out/clonality"))
+
+tcemprops = pblapply(ids, function(x) {
+  load(paste0(ext_folder1, "08out/tcem_mutated_nonamers_tcemfreqs/", x))
+  tempclon = clonality[clonality$sampleid == x,]
+  t(sapply(tempclon$ID, function(y) {
+    a = sapply(names(tcemfreqs), function(z) median(tcemfreqs[[z]][grepl(y, names(tcemfreqs[[z]]))],na.rm=T))
+    names(a) = names(tcemfreqs)
+    b = sapply(names(tcemfreqs), function(z) length(tcemfreqs[[z]][grepl(y, names(tcemfreqs[[z]]))]))
+    names(b) = paste0(names(tcemfreqs), "_nep")
+    c(a,b)
+  }))
+})
+tcemprops = do.call(rbind, tcemprops)
+tcemprops = tcemprops[,sort(colnames(tcemprops))]
+save(tcemprops, file = paste0(ext_folder1, "08out/tcemprops"))
+
+tcemprops = as.data.frame(tcemprops)
+res = cbind(clonality, tcemprops[match(clonality$ID, rownames(tcemprops)),])
+
+save(res, file = paste0(ext_folder1, "08out/clonality_and_tcemprops"))
+```
+
+#Statistics
+##Correlation
+
+```{r}
+load(paste0(ext_folder1, "08out/clonality_and_tcemprops"))
+ids = unique(res$sampleid)
+
+vals = colnames(res)[grepl("str_|weak_", colnames(res)) & !grepl("_nep", colnames(res))]
+cors = t(sapply(ids, function(x) {
+  tempres = res[res$sampleid == x,c("ratio", vals)]
+  tempcors = t(sapply(vals, function(y) {
+    if(length(tempres[,y][!is.na(tempres[,y])])<4) {
+      est = NA
+      pvalue = NA
+    } else {
+      est = rcorr(tempres$ratio, tempres[,y], type = "spearman")$r[1,2]
+      pvalue = rcorr(tempres$ratio, tempres[,y], type = "spearman")$P[1,2]
+    }
+    c(est, pvalue)
+  }))
+  colnames(tempcors) = c("rho", "pvalue")
+  tempcors
+}))
+colnames(cors) = c(paste0(vals, "_rho"),paste0(vals, "_pvalue"))
+
+valsnb = colnames(res)[grepl("_nep", colnames(res))]
+nbofpep = t(sapply(ids, function(x) {
+  tempres = res[res$sampleid == x,c("ratio", valsnb)]
+  tempnbofpep = t(sapply(valsnb, function(y) {
+    sum(tempres[,y])
+  }))
+}))
+colnames(nbofpep) = valsnb
+
+cors = cbind(cors, nbofpep)
+cors = cors[,sort(colnames(cors))]
+
+save(cors, file = paste0(ext_folder1, "08out/cors_patients"))
+```
+
+##Wilcoxon's rank sum test
+
+```{r}
+load(paste0(ext_folder1, "08out/clonality_and_tcemprops"))
+ids = unique(res$sampleid)
+
+vals = colnames(res)[grepl("str_|weak_", colnames(res)) & !grepl("_nep", colnames(res)) & !grepl("_dif", colnames(res))]
+wts = t(pbsapply(ids, function(x) {
+  tempres = res[res$sampleid == x,c("ratio", vals)]
+  tempwts = t(sapply(vals, function(y) {
+    tempres$group = cut(x = tempres[,y], breaks = c(0,4,Inf), include.lowest = T, right = F, labels = F)
+    if(nrow(subset(tempres, group == 1)) < 5 | nrow(subset(tempres, group == 2)) < 5) {
+      medlow = NA
+      medhigh = NA
+      pvalue = NA
+    } else {
+      medlow = median(tempres$ratio[tempres$group == 1], na.rm = T)
+      medhigh = median(tempres$ratio[tempres$group == 2], na.rm = T)
+      pvalue = wilcox.test(tempres$ratio[tempres$group == 1],tempres$ratio[tempres$group == 2])$p.value
+    }
+    c(medlow, medhigh, pvalue)
+  }))
+  colnames(tempwts) = c("medlow", "medhigh", "pvalue")
+  tempwts
+}))
+colnames(wts) = c(paste0(vals, "_medlow"),paste0(vals, "_medhigh"),paste0(vals, "_pvalue"))
+
+valsnb = colnames(res)[grepl("_nep", colnames(res)) & !grepl("_dif", colnames(res))]
+nbofpep = t(pbsapply(ids, function(x) {
+  tempres = res[res$sampleid == x,c("ratio", valsnb)]
+  tempnbofpep = t(sapply(valsnb, function(y) {
+    sum(tempres[,y])
+  }))
+}))
+colnames(nbofpep) = valsnb
+
+wts = cbind(wts, nbofpep)
+wts = wts[,sort(colnames(wts))]
+
+save(wts, file = paste0(ext_folder1, "08out/wts_patients"))
+```
+

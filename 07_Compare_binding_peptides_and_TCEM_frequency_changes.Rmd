@@ -1,0 +1,51 @@
+---
+title: "Untitled"
+author: "Balazs Koncz"
+date: '2020 12 02 '
+output: html_document
+---
+
+Compare binding peptides and TCEM frequency changes
+
+```{r}
+setwd("d:/CloudStation/mygit/fitness-modell-bk/")
+library(ggplot2)
+library(ggpubr)
+ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+
+```
+
+#Compare original and mutated binding peptides
+Többet köt a mutált peptidekből, mint az eredetiekből
+
+```{r}
+load(paste0(ext_folder1, "06out/dtann_agg"))
+ids = unique(dtann_agg$sampleid)
+binding_peps = sapply(grep("_n", colnames(dtann_agg), value = T), function(y) {
+  sapply(ids, function(x) sum(dtann_agg[dtann_agg$sampleid == x,y], na.rm = T))
+}) 
+binding_peps = as.data.frame(binding_peps)
+binding_peps$sampleid = rownames(binding_peps)
+binding_peps = tidyr::pivot_longer(binding_peps, 1:8, names_to = "binding_type")
+binding_peps$binding_type = factor(binding_peps$binding_type, levels = c("orig_affweak_n","mut_affweak_n","orig_affstr_n","mut_affstr_n","orig_rpweak_n","mut_rpweak_n","orig_rpstr_n","mut_rpstr_n"))
+ggplot(binding_peps, aes(x = binding_type, y = value)) + geom_boxplot() + scale_y_continuous(trans = "log10")
+wilcox.test(binding_peps$value[binding_peps$binding_type == "orig_affweak_n"],binding_peps$value[binding_peps$binding_type == "mut_affweak_n"],paired = T)$p.value
+wilcox.test(binding_peps$value[binding_peps$binding_type == "orig_affstr_n"],binding_peps$value[binding_peps$binding_type == "mut_affstr_n"],paired = T)$p.value
+wilcox.test(binding_peps$value[binding_peps$binding_type == "orig_rpweak_n"],binding_peps$value[binding_peps$binding_type == "mut_rpweak_n"],paired = T)$p.value
+wilcox.test(binding_peps$value[binding_peps$binding_type == "orig_rpstr_n"],binding_peps$value[binding_peps$binding_type == "mut_rpstr_n"],paired = T)$p.value
+```
+
+#Compare TCEM frequency changes
+
+```{r}
+dtann_agg$diff_affweak_medpf = dtann_agg$orig_affweak_medpf - dtann_agg$mut_affweak_medpf
+dtann_agg$diff_affstr_medpf = dtann_agg$orig_affstr_medpf - dtann_agg$mut_affstr_medpf
+dtann_agg$diff_rpweak_medpf = dtann_agg$orig_rpweak_medpf - dtann_agg$mut_rpweak_medpf
+dtann_agg$diff_rpstr_medpf = dtann_agg$orig_rpstr_medpf - dtann_agg$mut_rpstr_medpf
+
+ggplot(dtann_agg, aes(sampleid, diff_affweak_medpf)) + geom_boxplot()
+
+View(aggregate(diff_affweak_medpf~sampleid, dtann_agg, median))
+
+```
+

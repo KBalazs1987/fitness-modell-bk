@@ -12,16 +12,23 @@ setwd("d:/CloudStation/mygit/fitness-modell-bk/")
 library(Rfast)
 library(purrr)
 library(furrr)
-#library(pbapply)
+library(pbapply)
+library(parallel)
+library(Hmisc)
+library(ggplot2)
+library(ggpubr)
 ext_folder1 = "d:/CloudStation/fitness-model-ext/"
+# fillnafun = function(v,l) {
+#   outvec = c(v,rep(NA,l-length(v)))
+#   names(outvec) = NULL
+#   outvec
+# }
 ```
 
 
 #Collect peptides
 
 ```{r}
-proteome = read.delim(file = paste0(ext_folder1, "objects/uniprot-filtered-organism__Homo+sapiens+(Human)+[9606]_.tab"), stringsAsFactors = F)
-
 annfiles = list.files("D:/CloudStation/fitness-model/create_neoantigens/annotated/", full.names = T)
 
 dtann1 = read.table("D:/CloudStation/fitness-model/create_neoantigens/annotated/AL4602.txt", header = F, stringsAsFactors = F, col.names = c("Uploaded_variation","Location","Allele","Gene","Feature","Feature_type","Consequence","cDNA_position","CDS_position","Protein_position","Amino_acids","Codons","Existing_variation","Extra"))
@@ -121,7 +128,356 @@ for(i in ids) {
 rm(i, tempdtann, mers, alleles)
 ```
 
+
 #Determine binding peptides
+##Mers
+
+```{r}
+load(paste0(ext_folder1, "06out/dtann_01"))
+load("D:/CloudStation/fitness-model-ext/objects/pentamerfreq_tcem")
+dtann$dup = duplicated(dtann[,c("sampleid", "Uploaded_variation", "origreg", "mutreg")])
+dtann = dtann[dtann$dup == FALSE,]
+
+origmers = t(sapply(dtann$origreg, function(a) fillnafun(v = substring(a, 1:(nchar(a)-8), 9:nchar(a)), l = 9)))
+mutmers = t(sapply(dtann$mutreg, function(a) fillnafun(v = substring(a, 1:(nchar(a)-8), 9:nchar(a)), l = 9)))
+```
+
+##Colmins
+
+```{r}
+ids = unique(dtann$sampleid)
+
+#i = 0
+origaffmins = pbsapply(X = ids,FUN = function(z) {
+  # i = i+1
+  # .GlobalEnv$i = i
+  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", z))
+  t(apply(origmers[dtann$sampleid == z,,drop=F], 1, function(b) {
+    b = b[!is.na(b)]
+    cm = colMins(binding_matrix$aff[,b], value = T)
+    names(cm) = b
+    fillnafun(v = cm, 9)
+  }))
+})
+mutaffmins = pbsapply(X = ids,FUN = function(z) {
+  # i = i+1
+  # .GlobalEnv$i = i
+  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", z))
+  t(apply(mutmers[dtann$sampleid == z,,drop=F], 1, function(b) {
+    b = b[!is.na(b)]
+    cm = colMins(binding_matrix$aff[,b], value = T)
+    names(cm) = b
+    fillnafun(v = cm, 9)
+  }))
+})
+origrpmins = pbsapply(X = ids,FUN = function(z) {
+  # i = i+1
+  # .GlobalEnv$i = i
+  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", z))
+  t(apply(origmers[dtann$sampleid == z,,drop=F], 1, function(b) {
+    b = b[!is.na(b)]
+    cm = colMins(binding_matrix$rp[,b], value = T)
+    names(cm) = b
+    fillnafun(v = cm, 9)
+  }))
+})
+mutrpmins = pbsapply(X = ids,FUN = function(z) {
+  # i = i+1
+  # .GlobalEnv$i = i
+  load(paste0(ext_folder1, "06out/binding_matrices/binding_matrix_", z))
+  t(apply(mutmers[dtann$sampleid == z,,drop=F], 1, function(b) {
+    b = b[!is.na(b)]
+    cm = colMins(binding_matrix$rp[,b], value = T)
+    names(cm) = b
+    fillnafun(v = cm, 9)
+  }))
+})
+
+origaffmins = do.call(rbind, origaffmins)
+mutaffmins = do.call(rbind, mutaffmins)
+origrpmins = do.call(rbind, origrpmins)
+mutrpmins = do.call(rbind, mutrpmins)
+save(origaffmins, mutaffmins, origrpmins, mutrpmins, file = paste0(ext_folder1, "06out/affrpmins"))
+```
+
+##Pentamerfreqs - orig, aff
+♫
+```{r}
+no_cores <- detectCores() - 1
+c1 <- makeCluster(no_cores)
+stopCluster(c1)
+rm(c1, no_cores)
+
+load(paste0(ext_folder1, "06out/affrpmins"))
+
+#WEAK
+dtann$orig_affweak_n = pbapply(origaffmins, 1, function(d) sum(d[!is.na(d)]<500))
+Sys.time()
+clusterExport(cl = c1, varlist = c("origmers", "origaffmins"))
+orig_affweak_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = origmers[x,][origaffmins[x,]<500]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$orig_affweak_medpf = parSapply(cl = c1, X = orig_affweak_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(orig_affweak_medpf)
+
+#STRONG
+dtann$orig_affstr_n = pbapply(origaffmins, 1, function(d) sum(d[!is.na(d)]<50))
+Sys.time()
+clusterExport(cl = c1, varlist = c("origmers", "origaffmins"))
+orig_affstr_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = origmers[x,][origaffmins[x,]<50]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$orig_affstr_medpf = parSapply(cl = c1, X = orig_affstr_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(orig_affstr_medpf)
+```
+
+##Pentamerfreqs - orig, rp
+
+```{r}
+#WEAK
+dtann$orig_rpweak_n = pbapply(origrpmins, 1, function(d) sum(d[!is.na(d)]<2))
+Sys.time()
+clusterExport(cl = c1, varlist = c("origmers", "origrpmins"))
+orig_rpweak_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = origmers[x,][origrpmins[x,]<2]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$orig_rpweak_medpf = parSapply(cl = c1, X = orig_rpweak_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(orig_rpweak_medpf)
+
+#STRONG
+dtann$orig_rpstr_n = pbapply(origrpmins, 1, function(d) sum(d[!is.na(d)]<.5))
+Sys.time()
+clusterExport(cl = c1, varlist = c("origmers", "origrpmins"))
+orig_rpstr_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = origmers[x,][origrpmins[x,]<.5]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$orig_rpstr_medpf = parSapply(cl = c1, X = orig_rpstr_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(orig_rpstr_medpf)
+```
+
+##Pentamerfreqs - mut, aff
+```{r}
+#WEAK
+dtann$mut_affweak_n = pbapply(mutaffmins, 1, function(d) sum(d[!is.na(d)]<500))
+Sys.time()
+clusterExport(cl = c1, varlist = c("mutmers", "mutaffmins"))
+mut_affweak_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = mutmers[x,][mutaffmins[x,]<500]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$mut_affweak_medpf = parSapply(cl = c1, X = mut_affweak_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(mut_affweak_medpf)
+
+#STRONG
+dtann$mut_affstr_n = pbapply(mutaffmins, 1, function(d) sum(d[!is.na(d)]<50))
+Sys.time()
+clusterExport(cl = c1, varlist = c("mutmers", "mutaffmins"))
+mut_affstr_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = mutmers[x,][mutaffmins[x,]<50]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$mut_affstr_medpf = parSapply(cl = c1, X = mut_affstr_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(mut_affstr_medpf)
+```
+
+##Pentamerfreqs - mut, rp
+
+```{r}
+#WEAK
+dtann$mut_rpweak_n = pbapply(mutrpmins, 1, function(d) sum(d[!is.na(d)]<2))
+Sys.time()
+clusterExport(cl = c1, varlist = c("mutmers", "mutrpmins"))
+mut_rpweak_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = mutmers[x,][mutrpmins[x,]<2]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$mut_rpweak_medpf = parSapply(cl = c1, X = mut_rpweak_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(mut_rpweak_medpf)
+
+#STRONG
+dtann$mut_rpstr_n = pbapply(mutrpmins, 1, function(d) sum(d[!is.na(d)]<.5))
+Sys.time()
+clusterExport(cl = c1, varlist = c("mutmers", "mutrpmins"))
+mut_rpstr_medpf = parLapply(cl = c1, X = 1:nrow(dtann), fun = function(x) {
+  tempmers = mutmers[x,][mutrpmins[x,]<.5]
+  tempmers = tempmers[!is.na(tempmers)]
+})
+Sys.time()
+Sys.time()
+clusterExport(cl = c1, varlist = "pentamerfreq_tcem")
+dtann$mut_rpstr_medpf = parSapply(cl = c1, X = mut_rpstr_medpf, FUN = function(x) {
+  median(pentamerfreq_tcem[substr(x,4,8)])
+})
+Sys.time()
+rm(mut_rpstr_medpf)
+
+save(dtann, file = paste0(ext_folder1, "06out/dtann_02"))
+```
+
+#Aggragate clonality data
+
+```{r}
+clonality = matrix(NA, ncol = 11, nrow = 0, dimnames = list(NULL, c("CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","NORMAL","TUMOR")))
+for(i in list.files(paste0(ext_folder1, "objects/raw_vcf/"), full.names = T)) {
+  temprawdata = read.table(file = i, sep = "\t", col.names = c("CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","NORMAL","TUMOR"))
+  clonality = rbind(clonality, temprawdata)
+}
+rm(i, temprawdata)
+
+clonality$sampleid = sapply(clonality$ID, function(x) strsplit(x, "_")[[1]][5])
+clonality$counter = as.numeric(sapply(clonality$TUMOR, function(x) strsplit(x,":")[[1]][2]))
+clonality$denominator = as.numeric(sapply(clonality$TUMOR, function(x) strsplit(x,":")[[1]][1]))
+clonality$ratio = clonality$counter/clonality$denominator
+save(clonality, file = paste0(ext_folder1, "06out/clonality"))
+```
+
+#Combine tables
+
+```{r}
+load(paste0(ext_folder1, "06out/dtann_02"))
+load(paste0(ext_folder1, "06out/clonality"))
+
+mutids = unique(dtann$Uploaded_variation)
+dtann_agg = unique(dtann[,c("sampleid", "Uploaded_variation")])
+for(i in 1:8) {
+  print(i)
+  n = pbsapply(mutids, function(x) sum(dtann[dtann$Uploaded_variation == x,(6+(2*i-1))], na.rm = T))
+  pf = pbsapply(mutids, function(x) median(dtann[dtann$Uploaded_variation == x,(6+(2*i))], na.rm = T))
+  dtann_agg = cbind(dtann_agg, n[match(dtann_agg$Uploaded_variation, names(n))])
+  dtann_agg = cbind(dtann_agg, pf[match(dtann_agg$Uploaded_variation, names(pf))])
+}
+colnames(dtann_agg)[3:18] = colnames(dtann)[7:22]
+save(dtann_agg, file = paste0(ext_folder1, "06out/dtann_agg"))
+
+```
+
+#Correlation between clonality rate and TCEM frequency
+
+```{r}
+load(paste0(ext_folder1, "06out/dtann_agg"))
+load(paste0(ext_folder1, "06out/clonality"))
+res = cbind(clonality, dtann_agg[match(clonality$ID, dtann_agg$Uploaded_variation),3:18])
+rm(clonality, dtann_agg)
+
+ids = unique(res$sampleid)
+
+cors = t(sapply(ids, function(x) {
+  tempres = res[res$sampleid == x,15:31]
+  if(nrow(na.omit(tempres)) < 4) {
+    tempcors = matrix(NA, ncol = 2, nrow = 8, dimnames = list(1:8,c("rho", "pvalue")))
+  } else {
+    tempcors = t(sapply(seq(3,17,2), function(y) {
+      est = rcorr(tempres$ratio, tempres[,y], type = "spearman")$r[1,2]
+      pvalue = rcorr(tempres$ratio, tempres[,y], type = "spearman")$P[1,2]
+      c(est, pvalue)
+    }))
+    colnames(tempcors) = c("rho", "pvalue")
+    tempcors
+  }
+  tempcors
+}))
+rm(tempres, tempcors)
+cors = cors[,c(1,9,2,10,3,11,4,12,5,13,6,14,7,15,8,16)]
+colnames(cors) = c("orig_affweak_medpf_rho", "orig_affweak_medpf_p", "orig_affstr_medpf_rho", "orig_affstr_medpf_p", "orig_rpweak_medpf_rho", "orig_rpweak_medpf_p", "orig_rpstr_medpf_rho", "orig_rpstr_medpf_p", "mut_affweak_medpf_rho", "mut_affweak_medpf_p", "mut_affstr_medpf_rho", "mut_affstr_medpf_p", "mut_rpweak_medpf_rho", "mut_rpweak_medpf_p", "mut_rpstr_medpf_rho", "mut_rpstr_medpf_p")
+
+nmers = matrix(NA, nrow = length(ids), ncol = 0, dimnames = list(ids, NULL))
+for(i in 1:8) {
+  print(i)
+  n = pbsapply(ids, function(x) sum(res[res$sampleid == x,(15+(2*i-1))], na.rm = T))
+  nmers = cbind(nmers, n)
+}
+rm(i, n)
+colnames(nmers) = grep("_n", colnames(res), value = T)
+
+cors = cbind(nmers, cors[match(rownames(nmers), rownames(cors)),])
+cors = cors[,c(1,9,10,2,11,12,3,13,14,4,15,16,5,17,18,6,19,20,7,21,22,8,23,24)]
+save(cors, file = paste0(ext_folder1, "06out/cors"))
+
+
+
+```
+
+#Results
+
+```{r}
+load(paste0(ext_folder1, "06out/dtann_agg"))
+load(paste0(ext_folder1, "06out/clonality"))
+res = cbind(clonality, dtann_agg[match(clonality$ID, dtann_agg$Uploaded_variation),3:18])
+rm(clonality, dtann_agg)
+load(paste0(ext_folder1, "06out/cors"))
+
+sapply(seq(17,31,2), function(x) cor.test(res$ratio, res[,x], method = "spearman", use = "pairwise.complete.obs"))
+
+
+cor(res$ratio, res[,], method = "spearman", use = "pairwise.complete.obs")
+
+
+temppat = "Pat38"
+ggplot(res[res$sampleid == temppat,], aes(ratio, log2(orig_affweak_medpf))) + geom_point() + stat_cor(method = "spearman") + geom_smooth(method = "lm")
+
+load("D:/CloudStation/cohort12/c1c2")
+```
+
+Negative corr:
+Pat04	32.4493 0 CTLA-4 Melanoma A0101,A0201,B1501,B4405,C0202,C0303	A01,A02,B62,B44,UNK,UNK	0 >71 B62_B44
+Pat38	50.59724 0 CTLA-4 Melanoma A0301,A0201,B4002,B1517,C0701,C0202	A03,A02,B44,B58,UNK,UNK	0 31-50 B44
+Pat106 8.219175 1 CTLA-4 Melanoma A1101,A0201,B1501,B1302,C0602,C0304	A03,A02,B62,UNK,UNK,UNK 0 31-50 B62
+Pat29 43.5945 0 CTLA-4 Melanoma A0301,A0201,B0702,B1801,C0702,C1203	A03,A02,B07,B44,UNK,UNK	0 >71 B44
+R7495 2.1 1 PD-1 Non-Small Cell Lung Cancer	A1101,A1101,B3801,B3501,C1203,C0401	A03,A03,B27,B07,UNK,UNK	1 61-70 none
+
+Pos corr:
+FR9547 25.9 1 PD-1 Non-Small Cell Lung Cancer	A2402,A0201,B0801,B1801,C0701,C0701	A24,A02,B08,B44,UNK,UNK	1 61-70 B44
+Pat124 4.799998 1 CTLA-4 Melanoma A3201,A0201,B1302,B5101,C1502,C0602	A01,A02,UNK,B07,UNK,UNK	0 >71 none
+LSD4744	 25.21725 0 CTLA-4 Melanoma A2402,A0201,B0702,B3901,C0702,C1203	A24,A02,B07,B27,UNK,UNK	0 50-60 none
+
+
+Determine binding peptides
 
 ```{r}
 load(paste0(ext_folder1, "06out/dtann_01"))
@@ -199,20 +555,10 @@ patprop_pfreq <- future_map(.x = ids, .f = function(x) {
   out
 })
 
+names(patprop_pfreq) = sapply(patprop_pfreq, function(x) x[[1]][1])
 save(patprop_pfreq, file = paste0(ext_folder1, "06out/patprop_pfreq"))
 
-patprop_pfreq[[1]][2]
+patprop_pfreq[[1]]
 
-
-
-
-
-rawdata = read.table(file = paste0(ext_folder1, "objects/raw_vcf/AL4602.vcf"), sep = "\t", col.names = c("CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","NORMAL","TUMOR"))
-
-
-
-#NEMOK
-rawdata$orig_affweak_medtf = sapply(rawdata$ID, function(x) ifelse(grepl("_",dtann$origtcems_affweak[dtann$Uploaded_variation == x]), median(pentamerfreq_tcem[strsplit(dtann$origtcems_affweak[dtann$Uploaded_variation == x],"_")[[1]]]),median(pentamerfreq_tcem[dtann$origtcems_affweak[dtann$Uploaded_variation == x]])))
 
 ```
-
