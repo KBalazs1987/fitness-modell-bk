@@ -92,7 +92,7 @@ vals = sapply(names(tmn_list[3:10]), function(x) paste0(strsplit(x, "_")[[1]][1]
 rm(tmn_list)
 
 i=0
-pat_ratio = lapply(ids, function(x) {
+pat_ratio = lapply(ids[1:10], function(x) {
   i = i+1
   .GlobalEnv$i = i
   

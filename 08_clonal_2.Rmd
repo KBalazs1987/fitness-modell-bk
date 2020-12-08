@@ -393,3 +393,60 @@ wts = wts[,sort(colnames(wts))]
 save(wts, file = paste0(ext_folder1, "08out/wts_patients"))
 ```
 
+##Fisher test
+
+```{r}
+load(paste0(ext_folder1, "08out/clonality_and_tcemprops"))
+res$ratiogroup = cut(x = res$ratio, breaks = c(0,0.9,1), labels = c("low","high"), include.lowest = T, right = T)
+ids = unique(res$sampleid)
+
+vals = colnames(res)[grepl("str_|weak_", colnames(res)) & !grepl("_nep", colnames(res)) & !grepl("_dif", colnames(res))]
+fts = t(pbsapply(ids, function(x) {
+  tempres = res[res$sampleid == x,c("ratiogroup", vals)]
+  tempfts = t(sapply(vals, function(y) {
+    tempres$group = cut(x = tempres[,y], breaks = c(0,4,Inf), include.lowest = T, right = F, labels = F)
+    if(nrow(subset(tempres, group == 1)) < 5 | nrow(subset(tempres, group == 2)) < 5 | 
+       nrow(subset(tempres, ratiogroup == "low")) < 5 | nrow(subset(tempres, ratiogroup == "high")) < 5) {
+      fisheror = NA
+      fisherp = NA
+    } else {
+      fisheror = fisher.test(tempres$ratiogroup, tempres$group)$estimate
+      fisherp = fisher.test(tempres$ratiogroup, tempres$group)$p.value
+    }
+    c(fisheror, fisherp)
+  }))
+  colnames(tempfts) = c("fisheror", "fisherp")
+  tempfts
+}))
+colnames(fts) = c(paste0(vals, "_fisheror"),paste0(vals, "_fisherp"))
+save(fts, file = paste0(ext_folder1, "08out/fts_patients"))
+
+load(paste0(ext_folder1, "08out/wts_patients"))
+wts_fts = cbind(wts, fts)
+wts_fts = wts_fts[,sort(colnames(wts_fts))]
+save(wts_fts, file = paste0(ext_folder1, "08out/wts_fts_patients"))
+
+##########################################################
+
+load(paste0(ext_folder1, "08out/wts_fts_patients"))
+load(paste0(ext_folder1, "08out/clonality_and_tcemprops"))
+
+res$ratiogroup = cut(x = res$ratio, breaks = c(0,0.7,1), labels = c("low","high"), include.lowest = T, right = T)
+ids = unique(res$sampleid)
+vals = colnames(res)[grepl("str_|weak_", colnames(res)) & !grepl("_nep", colnames(res)) & !grepl("_dif", colnames(res))]
+
+x = "CR04885"
+y = vals[1]
+tempres = res[res$sampleid == x,c("ratio","ratiogroup", vals)]
+tempres$group = cut(x = tempres[,y], breaks = c(0,4,Inf), include.lowest = T, right = F, labels = F)
+median(tempres$ratio[tempres$group == 1], na.rm = T) #alacsony TCEM gyakoriságú peptidekben a klonalitási arány, ezt várjuk nagyobbnak
+median(tempres$ratio[tempres$group == 2], na.rm = T)
+wilcox.test(tempres$ratio[tempres$group == 1],tempres$ratio[tempres$group == 2])
+fisher.test(tempres$ratiogroup, tempres$group) #OR<1 alacsony TCEM gyakoriságúaknál nagyobb klonalitási arány
+table(tempres$ratiogroup, tempres$group)
+
+
+
+
+```
+
