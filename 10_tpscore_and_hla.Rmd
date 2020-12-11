@@ -1,0 +1,21 @@
+---
+title: "TP score and HLA"
+author: "Balazs Koncz"
+date: '2020 12 09 '
+output: html_document
+---
+Azt kaptuk, hogy akiknel nagy az olyan neopeptidek aranya, melyek alacsony TP score-ral rendelkeznek, rosszabbul élnek túl immunterápiás kohortokban. Feltehetően a pozitívan szelektálódott T sejtek hiánya miatt.
+Van-v alamilyen összefüggés a HLA allélok és a TP score között?
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
